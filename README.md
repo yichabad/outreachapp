@@ -1,50 +1,79 @@
 # Outreach Tracker
 
-A personal donor-outreach tracking app for managing an annual fundraising campaign.
-Single self-contained HTML file — no build step, no backend. Mobile-first, with a
-two-pane desktop layout above 900px. All data is stored locally in the browser
-(`localStorage`).
+A multi-user donor-outreach tracking app for managing an annual fundraising
+campaign. A small Node/Express service serves the browser frontend and a JSON API,
+authenticates users, enforces per-contact access control, and persists everything to
+a file-backed store on a Docker volume. Mobile-first, with a sidebar + master/detail
+layout above 900px.
 
-## Run it
+## Architecture
 
-Open `outreach-tracker.html` in any modern browser (Safari on iPhone, Chrome on
-Android/desktop). To serve it from the web server, it can be renamed to
-`index.html` or pointed at directly.
+- **`server.js`** — Express service. Serves `public/index.html`, exposes `/api/*`,
+  hashes passwords (`crypto.scrypt`), issues a signed `HttpOnly` session cookie, and
+  reads/writes a single JSON document at `$DATA_DIR/db.json` (atomic writes).
+- **`public/index.html`** — the whole frontend (vanilla HTML/CSS/JS, SheetJS from a
+  CDN for Excel parsing). Loads/saves through the API; `localStorage` is only an
+  offline cache.
+
+## Users & access control
+
+- **Per-user accounts.** Everyone signs in with an email + password.
+- **Roles:** `admin` and `user`.
+- **Per-contact access.** A user sees only contacts they **own** (created/imported) or
+  are **assigned** to. Admins see everything.
+- **Assignment.** Admins can assign any contact; a contact's **owner** can also share
+  it with teammates (from the contact's *Access* card). User account management
+  (create / delete / role / password reset) is **admin-only**, in the **Team** tab.
+
+## Run it (local, with Docker)
+
+```bash
+SESSION_SECRET=$(openssl rand -hex 32) \
+ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=changeme \
+PUBLIC_BASE_PATH= \
+docker compose up --build
+```
+
+Then open http://localhost (the compose file routes through Traefik in production; for
+a quick local run you can also `docker build -t outreach . && docker run -p 3000:3000
+-e ADMIN_EMAIL=you@example.com -e ADMIN_PASSWORD=changeme -v $PWD/data:/data outreach`
+and open http://localhost:3000).
+
+The first boot creates an admin from `ADMIN_EMAIL` / `ADMIN_PASSWORD` **only if no
+users exist yet**. Add the rest of your team from the Team tab.
+
+## Configuration (environment variables)
+
+| Var | Purpose |
+| --- | --- |
+| `SESSION_SECRET` | Signs session cookies. Set a long random value. If unset, a random secret is generated and persisted to the data volume. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | First-boot admin account (ignored once any user exists). |
+| `ADMIN_NAME` | Display name for the bootstrap admin (default `Admin`). |
+| `PUBLIC_BASE_PATH` | Path the app is served under behind the proxy (e.g. `/outreach`). Empty for root. |
+| `DATA_DIR` | Where `db.json` lives (default `/data`). |
+| `PORT` | Listen port (default `3000`). |
+
+In Coolify, set `SESSION_SECRET`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` as environment
+variables; `docker-compose.yml` wires them in and persists data to the `outreach-data`
+volume.
 
 ## Features
 
-- **Excel import** — reads a Salesforce/Chabad.org `.xlsx` export directly; unknown
-  columns are captured as custom fields. Export to a Salesforce-ready CSV.
-- **Households** — one entry per household with primary and secondary contacts; log
-  which spouse you spoke to.
-- **Donor tiers** — Top Future / Major / Mid / General, each with default personal
-  ("retail") and report/newsletter ("wholesale") touchpoint targets, overridable per
-  donor.
-- **Two tabs** — Courting (active ask list) and Pledged/Donated (auto-moves on pledge).
-- **Journey arcs** — a pre-commitment campaign track and a post-commitment
-  appreciation/stewardship track.
-- **Pledge tracking** — amount, payment plan, individual payments, fulfillment bar.
-- **Touchpoints** — personal vs. report/newsletter, with progress bars; bulk-log a
-  wholesale touchpoint to many donors at once.
-- **Today's dashboard** — daily call goal with progress ring, streak counter, and a
-  tap-to-call list.
-- **Interaction logging** — call/text/email/meeting/etc. with date, notes
-  (voice-to-text), and an optional follow-up task.
-- **Tasks** — due dates with overdue/today/upcoming grouping.
+- **Excel import** — reads a Salesforce/Chabad.org `.xlsx` export; unknown columns are
+  captured as custom fields. Imported contacts are owned by the importer. Export to a
+  Salesforce-ready CSV.
+- **Households, tiers, two tabs (Courting / Pledged), journey arcs, pledge tracking,
+  touchpoints, today's dashboard with goal ring + streak, interaction logging with
+  voice-to-text, and follow-up tasks** — see the in-app UI.
 - Hebrew verses from Pirkei Avot (Rabbi Tarfon) under the progress bars.
 
 ## Tech
 
-Plain HTML/CSS/JavaScript, no framework. Uses SheetJS (loaded from a CDN) for Excel
-parsing. Data persists in `localStorage` on the same device/browser.
-
-## Roadmap
-
-- Warm Editorial visual redesign (in progress).
-- Server/database sync so data persists across devices.
-- Optional AI-assisted voice logging.
+Node 22 + Express, no database server (JSON document store). Frontend is plain
+HTML/CSS/JS, no framework. Inter + Frank Ruhl Libre via Google Fonts; SheetJS via CDN.
 
 ## Notes
 
-This tool is for managing donor relationships. Although donor data lives only in the
-browser (it is **not** committed to this repo), keep this repository **private**.
+This tool manages donor PII. Donor data lives only on the server's data volume (it is
+**not** committed to this repo — see `.gitignore`). Keep this repository **private**
+and always run behind HTTPS.

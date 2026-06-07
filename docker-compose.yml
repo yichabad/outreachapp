@@ -1,0 +1,32 @@
+services:
+  outreach:
+    build: .
+    restart: unless-stopped
+    environment:
+      # Public path the app is served under (Traefik strips it before it reaches us).
+      - PUBLIC_BASE_PATH=/outreach
+      # Secret used to sign session cookies. Set a long random value in Coolify.
+      # If unset, a random secret is generated and persisted to the data volume.
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      # First-boot admin account (only used when no users exist yet).
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
+      - ADMIN_NAME=${ADMIN_NAME:-Admin}
+    volumes:
+      - outreach-data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.outreach.rule=PathPrefix(`/outreach`)"
+      - "traefik.http.routers.outreach.entrypoints=http"
+      - "traefik.http.middlewares.outreach-strip.stripprefix.prefixes=/outreach"
+      - "traefik.http.routers.outreach.middlewares=outreach-strip"
+      - "traefik.http.services.outreach.loadbalancer.server.port=3000"
+    networks:
+      - coolify
+
+volumes:
+  outreach-data:
+
+networks:
+  coolify:
+    external: true
