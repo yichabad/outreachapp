@@ -822,13 +822,13 @@ function renderList(){
   const courtingCt=donors.filter(d=>!isPledged(d)).length;
   const pledgedCt=donors.filter(isPledged).length;
   const tierChips=['All',...TIERS,'Overdue'].map(f=>{const active=filterVal===f;const lbl=f==='All'?'All':f==='Overdue'?`🔴 Overdue${od>0?' ('+od+')':''}`:TIER_CFG[f].label;const ct=f==='All'||f==='Overdue'?'':` (${donors.filter(d=>d.tier===f).length})`;return`<button class="fchip${active?' on':''}" data-filter="${f}">${lbl}${ct}</button>`;}).join('');
-  const bulkBar=bulkMode?`<div class="bulkbar"><span id="bulk-count">${bulkSel.size} selected</span><button id="ball-btn">${bulkSel.size>=filtered.length&&filtered.length>0?'Clear all':'Select all'}</button><button id="bw-btn" class="primary" ${bulkSel.size===0?'disabled':''}>📄 Log Wholesale</button><button id="bcancel-btn" style="margin-left:auto;">Done</button></div>`:'';
+  const bulkBar=(bulkMode&&window.innerWidth>=900)?`<div class="bulkbar"><span id="bulk-count">${bulkSel.size} selected</span><button id="ball-btn">${bulkSel.size>=filtered.length&&filtered.length>0?'Clear all':'Select all'}</button><button id="ba-btn" ${bulkSel.size===0?'disabled':''}>👤 Assign to…</button><button id="bw-btn" class="primary" ${bulkSel.size===0?'disabled':''}>📄 Log Wholesale</button><button id="bcancel-btn" style="margin-left:auto;">Done</button></div>`:'';
   const donorHTML=filtered.length===0?`<div class="empty"><div class="empty-icon">${isPledgedTab?'🤝':'🎯'}</div><div class="empty-txt">${isPledgedTab?'No pledged donors yet.':'No contacts in courting.'}</div></div>`:filtered.map(d=>donorRowHTML(d,isPledgedTab,window.innerWidth>=900&&desktopDetailId===d.id)).join('');
 
   return`<div class="hdr">
     <div class="hdr-top">
       <div><div class="hdr-title">Contacts</div>${donors.length>0?`<div class="hdr-sub">${donors.length} total${od+td>0?` · <span style="color:var(--red);">${od+td} tasks due</span>`:''}</div>`:''}</div>
-      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button><button class="hbtn" id="bulk-btn">${bulkMode?'✕':'☑'}</button><label class="hbtn" for="file-inp">↑ Import</label></div>
+      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button>${window.innerWidth>=900?`<button class="hbtn" id="bulk-btn" title="Select multiple to assign or log">${bulkMode?'✕':'☑'}</button>`:''}<label class="hbtn" for="file-inp">↑ Import</label></div>
     </div>
     ${donors.length>0?`${renderBars(isPledgedTab?'pledged':'courting')}<div class="tab-toggle"><button id="tab-courting" class="tab-btn ${!isPledgedTab?'on':'off'}">🎯 Courting (${courtingCt})</button><button id="tab-pledged" class="tab-btn ${isPledgedTab?'on':'off'}">🤝 Pledged (${pledgedCt})</button></div>`:''}
   </div>
@@ -1125,6 +1125,7 @@ function attachEvents(){
   document.getElementById('bcancel-btn')?.addEventListener('click',()=>{bulkMode=false;bulkSel.clear();render();});
   document.getElementById('ball-btn')?.addEventListener('click',()=>{const f=getFiltered();if(bulkSel.size>=f.length){bulkSel.clear();}else{f.forEach(d=>bulkSel.add(d.id));}render();});
   document.getElementById('bw-btn')?.addEventListener('click',showBulkModal);
+  document.getElementById('ba-btn')?.addEventListener('click',showBulkAssignModal);
   document.getElementById('tab-courting')?.addEventListener('click',()=>{listTab='courting';filterVal='All';render();});
   document.getElementById('tab-pledged')?.addEventListener('click',()=>{listTab='pledged';filterVal='All';render();});
 
@@ -1250,6 +1251,38 @@ function showBulkModal(){
   m.addEventListener('click',e=>{if(e.target===m)m.remove();});
   document.getElementById('bwcancel').onclick=()=>m.remove();
   document.getElementById('bwsave').onclick=()=>{const type=document.getElementById('bwt').value,date=document.getElementById('bwd').value,note=document.getElementById('bwn').value;sel.forEach(id=>{const d=getDonor(id);if(d)updateDonor(id,{interactions:[...(d.interactions||[]),{id:Date.now()+Math.random(),type,date,note}]});});m.remove();bulkMode=false;bulkSel.clear();render();};
+}
+
+function showBulkAssignModal(){
+  const sel=[...bulkSel];if(!sel.length)return;
+  const names=sel.map(id=>getDonor(id)?.name||'').filter(Boolean);
+  const candidates=allUsers;
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Assign Contacts</div>
+    <div class="msub">${sel.length} contact${sel.length!==1?'s':''}: ${esc(names.slice(0,3).join(', '))}${names.length>3?` +${names.length-3} more`:''}</div>
+    <div class="mfield"><label class="mlbl">Assign to teammate</label>
+      <select class="msel" id="ba-user">${candidates.map(u=>`<option value="${u.id}">${esc(u.name||u.email)}${u.id===(currentUser&&currentUser.id)?' (you)':''}</option>`).join('')}</select></div>
+    <div class="msub" style="font-size:12px;margin-top:-4px;">They'll be added as someone who can see and edit these contacts. Existing access is kept. (Only contacts you own or admin can reassign.)</div>
+    <div class="mrow"><button class="mbtn s" id="ba-cancel">Cancel</button><button class="mbtn p" id="ba-save">Assign</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('ba-cancel').onclick=()=>m.remove();
+  document.getElementById('ba-save').onclick=async()=>{
+    const uid=document.getElementById('ba-user').value;if(!uid)return;
+    const btn=document.getElementById('ba-save');btn.disabled=true;btn.textContent='Assigning…';
+    let ok=0,skip=0,fail=0;
+    for(const id of sel){
+      const d=getDonor(id);if(!d){fail++;continue;}
+      if(d.ownerId===uid||(d.assignedUserIds||[]).includes(uid)){skip++;continue;}
+      const ids=Array.from(new Set([...(d.assignedUserIds||[]),uid]));
+      try{const res=await api('/contacts/'+encodeURIComponent(id)+'/assign',{method:'PUT',body:JSON.stringify({assignedUserIds:ids})});
+        const i=donors.findIndex(x=>x.id===id);if(i>=0)donors[i]=res.contact;ok++;}
+      catch(e){if(e.code===401)return;fail++;}
+    }
+    m.remove();bulkMode=false;bulkSel.clear();writeCache();render();
+    alert(`Assigned ${ok} contact${ok!==1?'s':''}.`+(skip?` ${skip} already had access.`:'')+(fail?` ${fail} couldn't be reassigned (you must own them or be an admin).`:''));
+  };
 }
 
 function showAssignModal(contactId){
