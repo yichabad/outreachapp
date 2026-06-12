@@ -61,6 +61,7 @@ a{color:inherit;}
 }
 @media(max-width:899px){
   .mobile{padding-bottom:74px;}
+  .greenbox{padding:8px 11px;font-size:13px;font-weight:700;background:transparent;color:var(--text-3);align-self:center;}
 }
 
 /* ── SIDEBAR / BOTTOM NAV ──────────────────────────────────────── */
@@ -602,14 +603,27 @@ function exportCSV(){
 }
 
 // ── VOICE ─────────────────────────────────────────────────────────
+function resetMicBtn(targetId){const btn=document.getElementById('mic-'+targetId);if(btn){btn.className='micbtn';btn.textContent='🎤';}}
 function startMic(targetId){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){alert('Voice input not supported. Try Chrome or Safari.');return;}
-  if(recognition)recognition.stop();
+  if(!SR||!window.isSecureContext){
+    alert('Voice-to-text isn’t available here'+(!window.isSecureContext?' (needs a secure https connection)':' on this browser')+'.\n\nTip: tap the 🎤 on your phone keyboard to dictate straight into the note instead.');
+    return;
+  }
+  if(recognition){try{recognition.stop();}catch(e){}}
   recognition=new SR();recognition.lang='en-US';recognition.continuous=false;recognition.interimResults=false;
-  recognition.onresult=e=>{const txt=e.results[0][0].transcript;const el=document.getElementById(targetId);if(el){el.value+=(el.value?' ':'')+txt;el.dispatchEvent(new Event('input'));}micActive=false;micTarget=null;const btn=document.getElementById('mic-'+targetId);if(btn){btn.className='micbtn';btn.textContent='🎤';}};
-  recognition.onerror=recognition.onend=()=>{micActive=false;micTarget=null;const btn=document.getElementById('mic-'+targetId);if(btn){btn.className='micbtn';btn.textContent='🎤';}};
-  micActive=true;micTarget=targetId;recognition.start();const btn=document.getElementById('mic-'+targetId);if(btn){btn.className='micbtn on';btn.textContent='⏹';}
+  recognition.onresult=e=>{const txt=e.results[0][0].transcript;const el=document.getElementById(targetId);if(el){el.value+=(el.value?' ':'')+txt;el.dispatchEvent(new Event('input'));}};
+  recognition.onerror=e=>{micActive=false;micTarget=null;resetMicBtn(targetId);
+    if(e.error==='not-allowed'||e.error==='service-not-allowed'){alert('Microphone access is blocked. Allow mic access for this site in your browser settings, then tap 🎤 again.');}
+    else if(e.error==='no-speech'){/* user said nothing — ignore quietly */}
+    else if(e.error&&e.error!=='aborted'){alert('Voice input error: '+e.error);}
+  };
+  recognition.onend=()=>{micActive=false;micTarget=null;resetMicBtn(targetId);};
+  try{
+    recognition.start();
+    micActive=true;micTarget=targetId;
+    const btn=document.getElementById('mic-'+targetId);if(btn){btn.className='micbtn on';btn.textContent='⏹';}
+  }catch(e){micActive=false;micTarget=null;resetMicBtn(targetId);alert('Could not start voice input. Make sure no other app is using the microphone, then try again.');}
 }
 function stopMic(){if(recognition)recognition.stop();micActive=false;micTarget=null;}
 
@@ -738,7 +752,7 @@ function renderDashboard(){
     const isDone=dashState.doneCalls.includes(d.id);
     const hasOD=overdueTasks().some(t=>t.donorId===d.id);
     const tc=TIER_CFG[d.tier]||TIER_CFG.general;
-    return`<div class="call-card${isDone?' done-card':''}" id="cc-${d.id}">
+    return`<div class="call-card${isDone?' done-card':''}" id="cc-${d.id}" data-cardopen="${d.id}" style="cursor:pointer;">
       <div class="call-info">
         <div class="call-name">${esc(d.name)}</div>
         <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · ${fmt(d.target)}${hasOD?' · <span style="color:var(--red);">⚠️ overdue task</span>':''}</div>
@@ -859,7 +873,8 @@ function renderDetail(id){
     <div class="card"><div class="ctitle">Household Contacts</div>
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
       ${d.sName?`<div class="subhd" style="margin:9px 0 3px;">SECONDARY — ${esc(d.sName)}</div>`:''} ${d.sPhone?`<a class="clink" href="tel:${esc(d.sPhone)}">📞 ${esc(d.sPhone)}</a>`:''} ${d.sEmail?`<a class="clink" href="mailto:${esc(d.sEmail)}" style="font-size:13px;">✉️ ${esc(d.sEmail)}</a>`:''}
-      ${d.notes?`<div class="nbox">${esc(d.notes)}</div>`:''}
+      <label class="field-lbl" style="margin-top:11px;">Notes</label>
+      <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:66px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
     </div>
     ${accessCard}
     ${profileFields.length>0?`<div class="card"><button class="coll-toggle" id="profile-toggle">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} fields)</button>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join('')}</div>`:''}</div>`:''}
@@ -1048,6 +1063,10 @@ function attachEvents(){
   }));
 
   document.querySelectorAll('[data-opend]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.opend)));
+  document.querySelectorAll('[data-cardopen]').forEach(card=>card.addEventListener('click',e=>{
+    if(e.target.closest('[data-dashcall],[data-opend],a,.fu-prompt'))return;
+    openDetail(card.dataset.cardopen);
+  }));
 
   // List
   document.getElementById('add-btn')?.addEventListener('click',showAddModal);
@@ -1072,6 +1091,7 @@ function attachEvents(){
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
 
   document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});const el=document.getElementById('target-disp');if(el)el.textContent=fmt(v);});
+  document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
   document.getElementById('pledge-amt')?.addEventListener('change',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{pledgeAmount:v});const d=getDonor(activeDetailId);if(d&&v>0&&d.preArcStage<4)updateDonor(activeDetailId,{preArcStage:4});render();});
   document.querySelectorAll('[data-payplan]').forEach(b=>b.addEventListener('click',()=>{updateDonor(activeDetailId,{pledgePlan:b.dataset.payplan,pledgePlanNote:''});render();}));
   document.getElementById('pledge-plan-note')?.addEventListener('change',e=>{updateDonor(activeDetailId,{pledgePlanNote:e.target.value});});
@@ -1091,7 +1111,10 @@ function attachEvents(){
   document.getElementById('save-log-btn')?.addEventListener('click',()=>{
     const note=document.getElementById('log-note')?.value.trim();const date=document.getElementById('log-date')?.value;const spouse=document.getElementById('spouse-sel')?.value;
     const fuNote=document.getElementById('fu-note')?.value.trim();const fuDate=document.getElementById('fu-date')?.value;
-    if(!note)return;const d=getDonor(activeDetailId);if(!d)return;
+    const ta=document.getElementById('log-note');
+    if(!note){if(ta){ta.focus();ta.style.borderColor='var(--red)';ta.placeholder='Add a note before saving…';}return;}
+    if(ta)ta.style.borderColor='';
+    const d=getDonor(activeDetailId);if(!d)return;
     const spouseName=spouse==='Primary'?(d.pName||'Primary'):spouse==='Secondary'?(d.sName||'Secondary'):'Both';
     const interactions=[...(d.interactions||[]),{id:Date.now(),type:logType,date,note,spouse:spouseName}];
     const tasks=[...(d.tasks||[])];if(fuNote)tasks.push({id:Date.now()+1,note:fuNote,due:fuDate||'',done:false});
