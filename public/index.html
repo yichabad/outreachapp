@@ -187,6 +187,12 @@ a{color:inherit;}
 .clink{display:block;color:var(--brand);font-weight:600;text-decoration:none;margin-bottom:2px;padding:6px 0;transition:color .15s;}
 .clink:hover{color:var(--brand-strong);}
 .nbox{margin-top:10px;padding:11px 13px;background:var(--amber-soft);border:1px solid #f6e2bf;border-radius:var(--r-sm);font-size:13px;color:#7a5212;line-height:1.5;}
+.camp-switch{display:flex;align-items:center;gap:8px;padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30;}
+.camp-ico{font-size:15px;flex-shrink:0;}
+.camp-switch select{flex:1;min-width:0;padding:8px 10px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);font-size:14px;font-weight:700;color:var(--text);outline:none;}
+.camp-btn{flex-shrink:0;padding:8px 11px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);font-size:13px;font-weight:700;color:var(--text-2);white-space:nowrap;}
+.camp-btn:active{transform:scale(.96);}
+.camp-btn.danger{color:var(--red);border-color:#f3c9c9;}
 .chips{display:flex;gap:7px;flex-wrap:wrap;}
 .chip{padding:6px 13px;border-radius:var(--r-pill);border:1.5px solid var(--border);font-size:12px;background:var(--surface);color:var(--text-2);white-space:nowrap;font-weight:600;transition:all .15s;}
 .chip:hover{border-color:var(--brand);color:var(--brand);}
@@ -439,6 +445,7 @@ function api(path,opts){
 // ── STATE ─────────────────────────────────────────────────────────
 let currentUser=null, allUsers=[];
 let donors=[], settings=defaultSettings();
+let campaigns=[], activeCampaignId=null;
 let dashState={day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
 let view='dashboard',detailId=null,listTab='courting';
 let searchVal='',filterVal='All',sortVal='target';
@@ -477,11 +484,12 @@ window.addEventListener('online',()=>{if(dirtyContacts.size||settingsDirty||dash
 
 // ── OFFLINE CACHE ──────────────────────────────────────────────────
 function cacheKey(){return 'ot_cache_'+(currentUser?currentUser.id:'anon');}
-function writeCache(){try{localStorage.setItem(cacheKey(),JSON.stringify({donors,settings,dashState}));}catch{}}
+function writeCache(){try{localStorage.setItem(cacheKey(),JSON.stringify({donors,settings,dashState,campaigns,activeCampaignId}));}catch{}}
 function readCache(){try{return JSON.parse(localStorage.getItem(cacheKey()));}catch{return null;}}
 
 // ── UTILS ─────────────────────────────────────────────────────────
 function getDonor(id){return donors.find(d=>d.id===id);}
+function campaignDonors(){return activeCampaignId?donors.filter(d=>d.campaignId===activeCampaignId):donors;}
 function updateDonor(id,ch){donors=donors.map(d=>d.id===id?{...d,...ch}:d);markContact(id);}
 function str(v){return String(v==null?'':v).trim();}
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -492,7 +500,7 @@ function isPledged(d){return(d.pledgeAmount&&d.pledgeAmount>0)||(d.preArcStage>=
 function isFulfilled(d){return d.pledgeAmount>0&&(d.pledgePaid||0)>=d.pledgeAmount;}
 function taskDueStatus(d){if(!d)return'upcoming';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);return diff<0?'overdue':diff===0?'today':'upcoming';}
 function taskDueLabel(d){if(!d)return'';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);if(diff<0)return`${Math.abs(diff)}d overdue`;if(diff===0)return'Due today';if(diff===1)return'Due tomorrow';return'Due '+new Date(d+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'});}
-function getAllTasks(){return donors.flatMap(d=>(d.tasks||[]).filter(t=>!t.done).map(t=>({...t,donorId:d.id,donorName:d.name})));}
+function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done).map(t=>({...t,donorId:d.id,donorName:d.name})));}
 function overdueTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='overdue');}
 function todayTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='today');}
 function upcomingTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='upcoming').sort((a,b)=>(a.due||'').localeCompare(b.due||''));}
@@ -520,20 +528,21 @@ function updateStreak(goalMet){
 }
 
 function pledgeSummary(){
-  const p=donors.filter(isPledged);
+  const p=campaignDonors().filter(isPledged);
   const tp=p.reduce((s,d)=>s+(d.pledgeAmount||0),0);
   const paid=p.reduce((s,d)=>s+(d.pledgePaid||0),0);
   return{count:p.length,totalPledged:tp,totalPaid:paid,fulfilled:p.filter(isFulfilled).length,paidPct:tp>0?Math.round(paid/tp*100):0};
 }
 function getStats(){
-  const total=donors.length;
-  const contacted=donors.filter(d=>(d.interactions||[]).length>0).length;
+  const D=campaignDonors();
+  const total=D.length;
+  const contacted=D.filter(d=>(d.interactions||[]).length>0).length;
   const ps=pledgeSummary();
-  const tgt=donors.reduce((s,d)=>s+(d.target||0),0);
-  const courtingDonors=donors.filter(d=>!isPledged(d));
+  const tgt=D.reduce((s,d)=>s+(d.target||0),0);
+  const courtingDonors=D.filter(d=>!isPledged(d));
   const totalRetailTarget=courtingDonors.reduce((s,d)=>s+(d.retailTarget||1),0);
   const totalRetailDone=courtingDonors.reduce((s,d)=>s+(d.interactions||[]).filter(i=>!['📄 Report','📰 Newsletter'].includes(i.type)).length,0);
-  const pledgedDonors=donors.filter(isPledged);
+  const pledgedDonors=D.filter(isPledged);
   const totalStewardTarget=pledgedDonors.reduce((s,d)=>s+(d.retailTarget||1)+(d.wholesaleTarget||1),0);
   const totalStewardDone=pledgedDonors.reduce((s,d)=>s+(d.interactions||[]).length,0);
   return{total,contacted,tgt,outPct:totalRetailTarget>0?Math.round(totalRetailDone/totalRetailTarget*100):0,
@@ -573,8 +582,8 @@ function handleFile(file){
       const parsed=rows.map(parseDonorRow).filter(Boolean);
       if(!parsed.length){alert('No rows with a "Name" column were found.');return;}
       // Preserve any existing activity for contacts already in my list.
-      parsed.forEach(p=>{const ex=donors.find(d=>d.id===p.id||d.name===p.name);
-        if(ex){p.id=ex.id;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
+      parsed.forEach(p=>{p.campaignId=activeCampaignId;const ex=campaignDonors().find(d=>d.id===p.id||d.name===p.name);
+        if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
           p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
           p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];
           p.target=ex.target;p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;}});
@@ -595,7 +604,7 @@ function downloadSample(){
 
 function exportCSV(){
   const rows=[['WhoId','DonorName','Subject','ActivityDate','Description','Type','Spouse','Status']];
-  donors.forEach(d=>{
+  campaignDonors().forEach(d=>{
     (d.interactions||[]).forEach(i=>{rows.push([d.id,d.name,str(i.type).replace(/[^\w\s]/gi,''),i.date||today(),(i.note||'').replace(/,/g,';'),i.type.includes('Call')||i.type.includes('Meeting')?'Call':'Other',i.spouse||'','Completed']);});
     (d.tasks||[]).filter(t=>!t.done).forEach(t=>{rows.push([d.id,d.name,'Follow-up: '+(t.note||'').replace(/,/g,';'),t.due||today(),'','Task','','Open']);});
   });
@@ -650,7 +659,7 @@ function getDashCalls(){
   if(dashState.day!==today()){dashState.doneCalls=[];dashState.day=today();markDash();}
   const goal=settings.dailyGoal||10;
   const sortMode=settings.dashSort||'tier';
-  let pool=donors.filter(d=>!isPledged(d));
+  let pool=campaignDonors().filter(d=>!isPledged(d));
   if(sortMode==='overdue'){
     const odIds=new Set(overdueTasks().map(t=>t.donorId));
     pool=pool.sort((a,b)=>{const aOD=odIds.has(a.id)?1:0,bOD=odIds.has(b.id)?1:0;return bOD-aOD||(b.target||0)-(a.target||0);});
@@ -701,7 +710,7 @@ function donorRowHTML(d,pledgedTab,isSelected){
 }
 
 function getFiltered(){
-  return donors.filter(d=>{
+  return campaignDonors().filter(d=>{
     const q=searchVal.toLowerCase();const ms=!q||d.name.toLowerCase().includes(q)||(d.city||'').toLowerCase().includes(q);
     const mf=filterVal==='All'||d.tier===filterVal||(filterVal==='Overdue'&&overdueTasks().some(t=>t.donorId===d.id));
     const tab=listTab==='pledged'?isPledged(d):!isPledged(d);return ms&&mf&&tab;
@@ -799,7 +808,7 @@ function renderDashboard(){
         </div>
       </div>
     </div>
-    ${donors.length===0?`<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">No contacts yet.<br/>Import your Excel file or add a contact to get started.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`
+    ${campaignDonors().length===0?`<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">No contacts in this campaign yet.<br/>Import your Excel file or add a contact to get started.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`
     :calls.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">All courting contacts have been reached!<br/>Check the Contacts tab.</div></div>`
     :`<div class="list-head">Today's Call List</div>${callCards}`}
   </div>`;
@@ -829,7 +838,7 @@ function renderList(){
     <input class="sinput" id="search-input" placeholder="Search name or city…" value="${searchVal.replace(/"/g,'&quot;')}" autocomplete="off" autocorrect="off" spellcheck="false"/>
     <div class="frow">${tierChips}<select class="ssel" id="sort-sel"><option value="target" ${sortVal==='target'?'selected':''}>Target $</option><option value="name" ${sortVal==='name'?'selected':''}>Name</option><option value="activity" ${sortVal==='activity'?'selected':''}>Activity</option>${isPledgedTab?`<option value="pledge" ${sortVal==='pledge'?'selected':''}>Pledge $</option>`:''}</select></div>
   </div>
-  ${donors.length===0?`<div class="empty" style="padding-top:50px;"><div class="empty-icon">📋</div><div class="empty-txt">No contacts yet.<br/>Import your Excel file or use <b>+ Add</b>.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`:`<div id="donor-list" style="padding-bottom:30px;">${donorHTML}</div>`}`;
+  ${campaignDonors().length===0?`<div class="empty" style="padding-top:50px;"><div class="empty-icon">📋</div><div class="empty-txt">No contacts in this campaign yet.<br/>Import your Excel file or use <b>+ Add</b>.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`:`<div id="donor-list" style="padding-bottom:30px;">${donorHTML}</div>`}`;
 }
 
 // ── RENDER: DETAIL ─────────────────────────────────────────────────
@@ -971,6 +980,43 @@ function renderAdmin(){
 }
 
 // ── NAV ────────────────────────────────────────────────────────────
+function campaignSwitcherHTML(){
+  if(!campaigns.length)return '';
+  const isAdmin=currentUser&&currentUser.role==='admin';
+  const opts=campaigns.map(c=>`<option value="${c.id}"${c.id===activeCampaignId?' selected':''}>${esc(c.name)}</option>`).join('');
+  return`<div class="camp-switch">
+    <span class="camp-ico">🎯</span>
+    <select id="camp-sel" title="Active campaign">${opts}</select>
+    <button class="camp-btn" id="camp-new">＋ New</button>
+    ${isAdmin&&campaigns.length>1?`<button class="camp-btn danger" id="camp-del" title="Delete this campaign">🗑</button>`:''}
+  </div>`;
+}
+function switchCampaign(id){
+  if(id===activeCampaignId)return;
+  activeCampaignId=id;settings.defaultCampaignId=id;markSettings();
+  desktopDetailId=null;detailId=null;if(view==='detail')view='list';
+  render();
+}
+function createCampaignPrompt(){
+  const name=prompt('Name this campaign (for example: "2026 Annual Campaign"):');
+  if(!name||!name.trim())return;
+  setStatus('saving');
+  api('/campaigns',{method:'POST',body:JSON.stringify({name:name.trim()})})
+    .then(res=>{campaigns=res.campaigns||campaigns;activeCampaignId=res.campaign.id;settings.defaultCampaignId=activeCampaignId;markSettings();
+      desktopDetailId=null;detailId=null;if(view==='detail')view='list';writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not create the campaign: '+err.message);});
+}
+function deleteCampaignPrompt(){
+  const c=campaigns.find(x=>x.id===activeCampaignId);if(!c)return;
+  const n=donors.filter(d=>d.campaignId===activeCampaignId).length;
+  if(!confirm(`Delete the campaign “${c.name}” and permanently remove its ${n} contact${n!==1?'s':''}?\n\nThis cannot be undone.`))return;
+  setStatus('saving');
+  api('/campaigns/'+encodeURIComponent(activeCampaignId),{method:'DELETE'})
+    .then(res=>{const goneId=c.id;campaigns=res.campaigns||[];donors=donors.filter(d=>d.campaignId!==goneId);
+      activeCampaignId=(campaigns[0]&&campaigns[0].id)||null;settings.defaultCampaignId=activeCampaignId;markSettings();
+      desktopDetailId=null;detailId=null;if(view==='detail')view='list';writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not delete the campaign: '+err.message);});
+}
 function navHTML(){
   const due=overdueTasks().length+todayTasks().length;
   const items=[
@@ -1008,6 +1054,8 @@ function render(){
     rightContent=desktopDetailId?renderDetail(desktopDetailId):EMPTY_DETAIL;
   }
 
+  if(!(!isDesktop&&view==='detail'))leftContent=campaignSwitcherHTML()+leftContent;
+
   const nav=navHTML();
   const app=document.getElementById('app');
   if(isDesktop){
@@ -1026,6 +1074,9 @@ function render(){
 function attachEvents(){
   const isDesktop=window.innerWidth>=900;
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.nav;if(!isDesktop&&view!=='detail')detailId=null;if(isDesktop)desktopDetailId=null;render();}));
+  document.getElementById('camp-sel')?.addEventListener('change',e=>switchCampaign(e.target.value));
+  document.getElementById('camp-new')?.addEventListener('click',createCampaignPrompt);
+  document.getElementById('camp-del')?.addEventListener('click',deleteCampaignPrompt);
   document.getElementById('logout-btn')?.addEventListener('click',doLogout);
 
   const fi=document.getElementById('file-inp');
@@ -1179,7 +1230,7 @@ function showAddModal(){
   document.getElementById('add-save').onclick=()=>{
     const name=document.getElementById('anm').value.trim();if(!name){alert('Name required.');return;}
     const tier=document.getElementById('atier').value;const td=settings.tierDefaults[tier];
-    const c={name,pName:document.getElementById('apn').value.trim(),sName:document.getElementById('asn').value.trim(),pPhone:document.getElementById('aph').value.trim(),sPhone:document.getElementById('asp').value.trim(),pEmail:document.getElementById('ape').value.trim(),sEmail:'',city:document.getElementById('acy').value.trim(),state:'',street:'',zip:'',high:0,medium:0,low:0,actual:0,target:parseFloat(document.getElementById('atgt').value)||0,latestDonation:0,latestDate:'',largestDonation:0,notes:'',tier,years:{},custom:{},preArcStage:0,postArcStage:undefined,pledgeAmount:0,pledgePaid:0,pledgePlan:'',pledgePlanNote:'',payments:[],retailTarget:td.retail,wholesaleTarget:td.wholesale,interactions:[],tasks:[]};
+    const c={name,pName:document.getElementById('apn').value.trim(),sName:document.getElementById('asn').value.trim(),pPhone:document.getElementById('aph').value.trim(),sPhone:document.getElementById('asp').value.trim(),pEmail:document.getElementById('ape').value.trim(),sEmail:'',city:document.getElementById('acy').value.trim(),state:'',street:'',zip:'',high:0,medium:0,low:0,actual:0,target:parseFloat(document.getElementById('atgt').value)||0,latestDonation:0,latestDate:'',largestDonation:0,notes:'',tier,years:{},custom:{},preArcStage:0,postArcStage:undefined,pledgeAmount:0,pledgePaid:0,pledgePlan:'',pledgePlanNote:'',payments:[],retailTarget:td.retail,wholesaleTarget:td.wholesale,interactions:[],tasks:[],campaignId:activeCampaignId};
     const btn=document.getElementById('add-save');btn.disabled=true;btn.textContent='Adding…';setStatus('saving');
     api('/contacts',{method:'POST',body:JSON.stringify(c)}).then(res=>{donors.push(res.contact);setStatus('saved');writeCache();m.remove();if(window.innerWidth>=900){desktopDetailId=res.contact.id;view='list';}render();})
       .catch(err=>{if(err.code===401)return;btn.disabled=false;btn.textContent='Add';alert('Could not add: '+err.message);});
@@ -1291,6 +1342,8 @@ async function loadState(){
   currentUser=s.me;allUsers=s.users||[];
   donors=s.contacts||[];
   settings=Object.assign(defaultSettings(),s.settings||{});
+  campaigns=s.campaigns||[];
+  activeCampaignId=(campaigns.find(c=>c.id===settings.defaultCampaignId)?settings.defaultCampaignId:(campaigns[0]&&campaigns[0].id))||null;
   dashState=s.dash||{day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
   if(!dashState.streak)dashState.streak={date:'',count:0,lastGoal:0};
   if(!Array.isArray(dashState.doneCalls))dashState.doneCalls=[];
@@ -1306,7 +1359,7 @@ async function boot(){
   }catch(e){
     if(e.code===401){return;/* renderLogin already shown by api() */}
     const cache=readCache();
-    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;view='dashboard';render();setStatus('offline');}
+    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;campaigns=cache.campaigns||[];activeCampaignId=cache.activeCampaignId||(campaigns[0]&&campaigns[0].id)||null;view='dashboard';render();setStatus('offline');}
     else{renderLogin('Could not reach the server. Please try again.');}
   }
 }

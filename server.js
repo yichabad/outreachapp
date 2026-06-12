@@ -43,7 +43,14 @@ function loadDB() {
   db.contacts = db.contacts || [];
   db.settingsByUser = db.settingsByUser || {};
   db.dashByUser = db.dashByUser || {};
+  db.campaigns = db.campaigns || [];
   db.meta = db.meta || {};
+  // Ensure at least one campaign exists, and that every contact belongs to one.
+  if (db.campaigns.length === 0) {
+    db.campaigns.push({ id: newId('camp'), name: 'Beta — test data', createdAt: Date.now() });
+  }
+  const firstCampaignId = db.campaigns[0].id;
+  db.contacts.forEach((c) => { if (!c.campaignId) c.campaignId = firstCampaignId; });
   if (!db.meta.sessionSecret) {
     db.meta.sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
   }
@@ -203,6 +210,7 @@ app.get('/api/state', (req, res) => {
     contacts,
     settings,
     dash,
+    campaigns: db.campaigns,
     users: db.users.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
   });
 });
@@ -220,6 +228,7 @@ app.post('/api/contacts', (req, res) => {
   c.id = c.id || newId('c');
   c.ownerId = req.user.id;
   c.assignedUserIds = [];
+  if (!c.campaignId || !db.campaigns.find((x) => x.id === c.campaignId)) c.campaignId = db.campaigns[0].id;
   c.updatedAt = Date.now();
   c.updatedBy = req.user.id;
   db.contacts.push(c);
@@ -235,6 +244,7 @@ app.put('/api/contacts/:id', (req, res) => {
     c.id = req.params.id;
     c.ownerId = req.user.id;
     c.assignedUserIds = [];
+    if (!c.campaignId || !db.campaigns.find((x) => x.id === c.campaignId)) c.campaignId = db.campaigns[0].id;
     c.updatedAt = Date.now();
     c.updatedBy = req.user.id;
     db.contacts.push(c);
@@ -247,6 +257,7 @@ app.put('/api/contacts/:id', (req, res) => {
     id: existing.id,
     ownerId: existing.ownerId,
     assignedUserIds: existing.assignedUserIds || [],
+    campaignId: existing.campaignId,
     updatedAt: Date.now(),
     updatedBy: req.user.id,
   });
@@ -286,6 +297,7 @@ app.post('/api/contacts/bulk', (req, res) => {
       data.id = data.id || newId('c');
       data.ownerId = req.user.id;
       data.assignedUserIds = [];
+      if (!data.campaignId || !db.campaigns.find((x) => x.id === data.campaignId)) data.campaignId = db.campaigns[0].id;
       data.updatedAt = Date.now();
       data.updatedBy = req.user.id;
       db.contacts.push(data);
@@ -311,6 +323,35 @@ app.put('/api/contacts/:id/assign', (req, res) => {
 });
 
 // ── PER-USER SETTINGS + DASHBOARD ────────────────────────────────────────────
+// ── CAMPAIGNS ─────────────────────────────────────────────────────────────────
+// Any signed-in user can create or switch campaigns; only admins can delete one.
+app.get('/api/campaigns', (req, res) => {
+  res.json({ campaigns: db.campaigns });
+});
+
+app.post('/api/campaigns', (req, res) => {
+  const name = String(req.body.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'A campaign name is required.' });
+  const campaign = { id: newId('camp'), name, createdAt: Date.now(), createdBy: req.user.id };
+  db.campaigns.push(campaign);
+  persist();
+  res.json({ campaign, campaigns: db.campaigns });
+});
+
+app.delete('/api/campaigns/:id', requireAdmin, (req, res) => {
+  if (db.campaigns.length <= 1) {
+    return res.status(400).json({ error: 'You cannot delete the only campaign.' });
+  }
+  const id = req.params.id;
+  if (!db.campaigns.find((c) => c.id === id)) {
+    return res.json({ ok: true, campaigns: db.campaigns });
+  }
+  db.campaigns = db.campaigns.filter((c) => c.id !== id);
+  db.contacts = db.contacts.filter((c) => c.campaignId !== id);
+  persist();
+  res.json({ ok: true, campaigns: db.campaigns });
+});
+
 app.put('/api/settings', (req, res) => {
   db.settingsByUser[req.user.id] = Object.assign(defaultSettings(), req.body || {});
   persist();
