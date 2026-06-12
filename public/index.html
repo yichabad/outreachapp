@@ -1095,22 +1095,9 @@ function attachEvents(){
     const remaining=Math.max(0,(settings.dailyGoal||10)-doneCt);
     fireConfetti();showCheer(remaining);
     if(remaining===0)updateStreak(true);
-    const card=document.getElementById('cc-'+id);
-    if(card){
-      b.className='done-btn completed';b.textContent='✓ Done';
-      const prompt=document.createElement('div');prompt.className='fu-prompt';
-      prompt.innerHTML=`<div class="fu-prompt-txt">📝 Want to record the next move?</div><div class="fu-prompt-row"><button style="background:var(--brand);color:#fff;" data-opend="${id}">Yes, open contact</button><button style="background:var(--surface-2);color:var(--text-2);" id="skip-fu-${id}">Skip</button></div>`;
-      card.appendChild(prompt);
-      document.getElementById('skip-fu-'+id)?.addEventListener('click',()=>prompt.remove());
-      prompt.querySelector('[data-opend]')?.addEventListener('click',()=>openDetail(id));
-    }
-    const calls2=getDashCalls();const doneCt2=dashState.doneCalls.filter(x=>calls2.find(d=>d.id===x)).length;
-    const pct=Math.round(doneCt2/(settings.dailyGoal||10)*100);
-    const radius=36,circ=2*Math.PI*radius,dashOff=circ*(1-(Math.min(100,pct)/100));
-    const ring=document.querySelector('.ring-svg circle:last-child');if(ring)ring.setAttribute('stroke-dashoffset',dashOff);
-    const big=document.querySelector('.goal-big');if(big)big.innerHTML=`${doneCt2} <span style="font-size:16px;opacity:0.7;">/ ${settings.dailyGoal||10}</span>`;
-    const sub=document.querySelector('.goal-sub');if(sub)sub.textContent=remaining===0?'🏆 Goal reached!':remaining+' remaining';
-    const pctEl=document.querySelector('.ring-pct');if(pctEl)pctEl.textContent=Math.min(100,pct)+'%';
+    // Marking a call done means recording what happened — jump straight into
+    // the contact's Log Interaction screen so the rep can write it up.
+    openDetailToLog(id);
   }));
 
   document.querySelectorAll('[data-opend]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.opend)));
@@ -1192,6 +1179,13 @@ function attachEvents(){
 function openDetail(id){
   if(window.innerWidth>=900){desktopDetailId=id;view='list';render();}
   else{detailId=id;view='detail';render();}
+}
+function openDetailToLog(id){
+  openDetail(id);
+  requestAnimationFrame(()=>{
+    const el=document.getElementById('log-note');
+    if(el){el.scrollIntoView({behavior:'smooth',block:'center'});try{el.focus({preventScroll:true});}catch(e){el.focus();}}
+  });
 }
 
 function attachDonorEvents(){
