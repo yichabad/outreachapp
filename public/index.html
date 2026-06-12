@@ -1311,7 +1311,11 @@ async function boot(){
   }
 }
 
-window.addEventListener('resize',()=>{if(currentUser)render();});
+let wasDesktopLayout=window.innerWidth>=900;
+window.addEventListener('resize',()=>{
+  const nowDesktop=window.innerWidth>=900;
+  if(nowDesktop!==wasDesktopLayout){wasDesktopLayout=nowDesktop;if(currentUser)render();}
+});
 boot();
 </script>
 </body>
