@@ -110,7 +110,7 @@ a{color:inherit;}
 .hbtn.bulk-toggle{background:var(--amber);border-color:var(--amber);color:#fff;}
 .hbtn.bulk-toggle:hover{background:#b45e04;border-color:#b45e04;color:#fff;}
 .hbtn.bulk-toggle.on{background:var(--surface);border-color:var(--amber);color:var(--amber);}
-.drow.compact{padding:11px 14px;align-items:center;}
+.drow.compact{padding:11px 14px;align-items:center;user-select:none;-webkit-user-select:none;}
 .drow.compact.bulk-on{background:var(--brand-soft);border-left-color:var(--brand);}
 
 /* ── PROGRESS BARS ─────────────────────────────────────────────── */
@@ -133,8 +133,7 @@ a{color:inherit;}
 .sbar{padding:13px 16px 9px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:9;}
 .sinput{width:100%;padding:10px 13px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);outline:none;transition:all .15s;}
 .sinput:focus{border-color:var(--brand);background:var(--surface);box-shadow:0 0 0 3px var(--brand-soft);}
-.frow{display:flex;gap:7px;overflow-x:auto;padding:9px 0 3px;scrollbar-width:none;align-items:center;}
-.frow::-webkit-scrollbar{display:none;}
+.frow{display:flex;flex-wrap:wrap;gap:7px;padding:9px 0 3px;align-items:center;}
 .fchip{padding:6px 12px;border-radius:var(--r-pill);border:1.5px solid var(--border);white-space:nowrap;font-size:12px;font-weight:600;background:var(--surface);color:var(--text-2);flex-shrink:0;transition:all .15s;}
 .fchip:hover{border-color:var(--brand);color:var(--brand);}
 .fchip.on{background:var(--brand);color:#fff;border-color:var(--brand);}
@@ -454,7 +453,7 @@ let campaigns=[], activeCampaignId=null;
 let dashState={day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
 let view='dashboard',detailId=null,listTab='courting';
 let searchVal='',filterVal='All',sortVal='target';
-let bulkMode=false,bulkSel=new Set();
+let bulkMode=false,bulkSel=new Set(),lastBulkIdx=null;
 let logType=INT_TYPES[0],logSpouse='Primary';
 let profileOpen={};
 let micActive=false,micTarget=null,recognition=null;
@@ -1114,8 +1113,8 @@ function attachEvents(){
 
   // List
   document.getElementById('add-btn')?.addEventListener('click',showAddModal);
-  document.getElementById('bulk-btn')?.addEventListener('click',()=>{bulkMode=!bulkMode;bulkSel.clear();render();});
-  document.getElementById('bcancel-btn')?.addEventListener('click',()=>{bulkMode=false;bulkSel.clear();render();});
+  document.getElementById('bulk-btn')?.addEventListener('click',()=>{bulkMode=!bulkMode;bulkSel.clear();lastBulkIdx=null;render();});
+  document.getElementById('bcancel-btn')?.addEventListener('click',()=>{bulkMode=false;bulkSel.clear();lastBulkIdx=null;render();});
   document.getElementById('ball-btn')?.addEventListener('click',()=>{const f=getFiltered();if(bulkSel.size>=f.length){bulkSel.clear();}else{f.forEach(d=>bulkSel.add(d.id));}render();});
   document.getElementById('bw-btn')?.addEventListener('click',showBulkModal);
   document.getElementById('ba-btn')?.addEventListener('click',showBulkAssignModal);
@@ -1198,7 +1197,9 @@ function attachDonorEvents(){
   const isDesktop=window.innerWidth>=900;
   document.querySelectorAll('.drow[data-id]').forEach(el=>{
     el.addEventListener('click',e=>{
-      if(bulkMode){const id=el.dataset.id;bulkSel.has(id)?bulkSel.delete(id):bulkSel.add(id);
+      if(bulkMode){const id=el.dataset.id;const f=getFiltered();const idx=f.findIndex(d=>d.id===id);
+        if(e.shiftKey&&lastBulkIdx!==null&&idx>=0){const a=Math.min(lastBulkIdx,idx),b=Math.max(lastBulkIdx,idx);for(let i=a;i<=b;i++)bulkSel.add(f[i].id);lastBulkIdx=idx;render();return;}
+        bulkSel.has(id)?bulkSel.delete(id):bulkSel.add(id);lastBulkIdx=idx;
         const cbx=el.querySelector('.dcb');if(cbx){cbx.className='dcb'+(bulkSel.has(id)?' on':'');cbx.textContent=bulkSel.has(id)?'✓':'';}
         el.classList.toggle('bulk-on',bulkSel.has(id));
         const cnt=document.getElementById('bulk-count');if(cnt)cnt.textContent=bulkSel.size+' selected';
