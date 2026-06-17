@@ -107,6 +107,11 @@ a{color:inherit;}
 .hbtn:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-soft);}
 .hbtn.primary{background:var(--brand);border-color:var(--brand);color:#fff;}
 .hbtn.primary:hover{background:var(--brand-strong);color:#fff;}
+.hbtn.bulk-toggle{background:var(--amber);border-color:var(--amber);color:#fff;}
+.hbtn.bulk-toggle:hover{background:#b45e04;border-color:#b45e04;color:#fff;}
+.hbtn.bulk-toggle.on{background:var(--surface);border-color:var(--amber);color:var(--amber);}
+.drow.compact{padding:11px 14px;align-items:center;}
+.drow.compact.bulk-on{background:var(--brand-soft);border-left-color:var(--brand);}
 
 /* ── PROGRESS BARS ─────────────────────────────────────────────── */
 .pbars{display:grid;gap:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);padding:14px 16px;margin-bottom:12px;}
@@ -700,6 +705,7 @@ function donorRowHTML(d,pledgedTab,isSelected){
   const tc=TIER_CFG[d.tier]||TIER_CFG.general;const last=(d.interactions||[]).slice(-1)[0];
   const hasOD=overdueTasks().some(t=>t.donorId===d.id);const fulfilled=isFulfilled(d);
   const cb=bulkMode?`<div class="dcb${bulkSel.has(d.id)?' on':''}" data-cbid="${d.id}">${bulkSel.has(d.id)?'✓':''}</div>`:'';
+  if(bulkMode)return`<div class="drow compact${bulkSel.has(d.id)?' bulk-on':''}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div></div></div>`;
   const pledgePct=d.pledgeAmount>0?Math.min(100,Math.round((d.pledgePaid||0)/d.pledgeAmount*100)):0;
   const bottomSection=pledgedTab
     ?d.pledgeAmount>0?`<div style="margin-top:6px;"><div class="mbar-bg"><div style="background:${fulfilled?'var(--emer)':'var(--amber)'};border-radius:999px;height:4px;width:${pledgePct}%;"></div></div><div style="font-size:9.5px;color:${fulfilled?'var(--emer)':'var(--text-3)'};margin-top:3px;font-weight:700;">${fulfilled?'✅ Fully paid':fmt(d.pledgePaid||0)+' paid · '+pledgePct+'%'}${d.pledgePlan?' · '+d.pledgePlan:''}</div></div>`
@@ -828,7 +834,7 @@ function renderList(){
   return`<div class="hdr">
     <div class="hdr-top">
       <div><div class="hdr-title">Contacts</div>${donors.length>0?`<div class="hdr-sub">${donors.length} total${od+td>0?` · <span style="color:var(--red);">${od+td} tasks due</span>`:''}</div>`:''}</div>
-      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button>${window.innerWidth>=900?`<button class="hbtn" id="bulk-btn" title="Check off several contacts to assign them to your team at once">${bulkMode?'✕ Cancel':'☑ Select to assign'}</button>`:''}<label class="hbtn" for="file-inp">↑ Import</label></div>
+      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button>${window.innerWidth>=900?`<button class="hbtn bulk-toggle${bulkMode?' on':''}" id="bulk-btn" title="Check off several contacts to assign them to your team at once">${bulkMode?'✕ Cancel':'☑ Bulk Actions'}</button>`:''}<label class="hbtn" for="file-inp">↑ Import</label></div>
     </div>
     ${donors.length>0?`${renderBars(isPledgedTab?'pledged':'courting')}<div class="tab-toggle"><button id="tab-courting" class="tab-btn ${!isPledgedTab?'on':'off'}">🎯 Courting (${courtingCt})</button><button id="tab-pledged" class="tab-btn ${isPledgedTab?'on':'off'}">🤝 Pledged (${pledgedCt})</button></div>`:''}
   </div>
@@ -1192,8 +1198,11 @@ function attachDonorEvents(){
   const isDesktop=window.innerWidth>=900;
   document.querySelectorAll('.drow[data-id]').forEach(el=>{
     el.addEventListener('click',e=>{
-      if(e.target.dataset.cbid){const id=e.target.dataset.cbid;bulkSel.has(id)?bulkSel.delete(id):bulkSel.add(id);e.target.className='dcb'+(bulkSel.has(id)?' on':'');e.target.textContent=bulkSel.has(id)?'✓':'';
+      if(bulkMode){const id=el.dataset.id;bulkSel.has(id)?bulkSel.delete(id):bulkSel.add(id);
+        const cbx=el.querySelector('.dcb');if(cbx){cbx.className='dcb'+(bulkSel.has(id)?' on':'');cbx.textContent=bulkSel.has(id)?'✓':'';}
+        el.classList.toggle('bulk-on',bulkSel.has(id));
         const cnt=document.getElementById('bulk-count');if(cnt)cnt.textContent=bulkSel.size+' selected';
+        const ba=document.getElementById('ba-btn');if(ba)ba.disabled=bulkSel.size===0;
         const bw=document.getElementById('bw-btn');if(bw)bw.disabled=bulkSel.size===0;
         const ball=document.getElementById('ball-btn');if(ball)ball.textContent=(bulkSel.size>=getFiltered().length&&getFiltered().length>0)?'Clear all':'Select all';
         return;}
