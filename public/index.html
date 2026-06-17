@@ -828,7 +828,7 @@ function renderList(){
   return`<div class="hdr">
     <div class="hdr-top">
       <div><div class="hdr-title">Contacts</div>${donors.length>0?`<div class="hdr-sub">${donors.length} total${od+td>0?` · <span style="color:var(--red);">${od+td} tasks due</span>`:''}</div>`:''}</div>
-      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button>${window.innerWidth>=900?`<button class="hbtn" id="bulk-btn" title="Select multiple to assign or log">${bulkMode?'✕':'☑'}</button>`:''}<label class="hbtn" for="file-inp">↑ Import</label></div>
+      <div class="hdr-btns"><button class="hbtn primary" id="add-btn">+ Add</button>${window.innerWidth>=900?`<button class="hbtn" id="bulk-btn" title="Check off several contacts to assign them to your team at once">${bulkMode?'✕ Cancel':'☑ Select to assign'}</button>`:''}<label class="hbtn" for="file-inp">↑ Import</label></div>
     </div>
     ${donors.length>0?`${renderBars(isPledgedTab?'pledged':'courting')}<div class="tab-toggle"><button id="tab-courting" class="tab-btn ${!isPledgedTab?'on':'off'}">🎯 Courting (${courtingCt})</button><button id="tab-pledged" class="tab-btn ${isPledgedTab?'on':'off'}">🤝 Pledged (${pledgedCt})</button></div>`:''}
   </div>
