@@ -889,6 +889,7 @@ function renderDashboard(){
         <div class="call-name">${esc(d.name)}</div>
         <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · ${fmt(d.target)}${hasOD?' · <span style="color:var(--red);">⚠️ overdue task</span>':''}</div>
         ${d.pPhone?`<a class="call-phone" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''}
+        ${miniBarsHTML(d,isPledged(d))}
       </div>
       <div class="call-right">
         <button class="done-btn${isDone?' completed':''}" data-dashcall="${d.id}">${isDone?'✓ Done':'Mark Done'}</button>
