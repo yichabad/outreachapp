@@ -53,11 +53,13 @@ a{color:inherit;}
   .page-inner,.dash,.sbody,.tsec{max-width:1040px;margin:0 auto;}
   .left-panel{width:452px;flex-shrink:0;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;background:var(--surface);}
   .left-scroll{flex:1;overflow-y:auto;}
-  .right-panel{flex:1;overflow-y:auto;background:var(--bg);}
+  .right-panel{flex:1;overflow-y:auto;background:var(--surface-3);}
   .right-empty{height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-3);text-align:center;padding:40px;}
   .re-icon{font-size:46px;margin-bottom:14px;}
   .dbody{max-width:820px;margin:0 auto;padding:22px 26px 60px;}
   .dhdr{position:sticky;top:0;z-index:5;}
+  /* Lift cards off the panel so the detail view reads with structure, not a wash of white. */
+  .right-panel .card{box-shadow:var(--sh-2);border-color:var(--border-2);}
 }
 @media(max-width:899px){
   .mobile{padding-bottom:74px;}
@@ -184,6 +186,9 @@ a{color:inherit;}
 .tcell{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 3px;}
 .tlbl{font-size:9.5px;color:var(--text-3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
 .tval{font-size:14px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.tval-inp{width:100%;border:none;border-bottom:1px dashed var(--border-2);background:transparent;text-align:center;font-size:14px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;padding:1px 0;appearance:textfield;-moz-appearance:textfield;}
+.tval-inp::-webkit-outer-spin-button,.tval-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.tval-inp:focus{outline:none;color:var(--brand);border-bottom-color:var(--brand);}
 .r2{display:flex;gap:9px;margin-top:7px;}
 .inp{flex:1;padding:10px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);outline:none;transition:all .15s;}
 .inp:focus{border-color:var(--brand);background:var(--surface);box-shadow:0 0 0 3px var(--brand-soft);}
@@ -256,6 +261,8 @@ a{color:inherit;}
 .savebtn:active{transform:translateY(1px);}
 .savebtn.alt{background:var(--surface-2);color:var(--text-2);border:1px solid var(--border-2);}
 .savebtn.alt:hover{background:var(--surface-3);color:var(--text);}
+.savebtn.danger{background:var(--red-soft);color:var(--red);border:1px solid #f3c9c9;box-shadow:none;}
+.savebtn.danger:hover{background:#fbdce1;}
 .micbtn{padding:9px 11px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface);font-size:17px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s;}
 .micbtn:hover{border-color:var(--brand);}
 .micbtn.on{background:var(--red-soft);border-color:var(--red);animation:micpulse 1.1s ease-in-out infinite;}
@@ -285,6 +292,16 @@ a{color:inherit;}
 .hnote{font-size:13px;color:var(--text-2);margin-top:3px;line-height:1.5;}
 .hdel{color:var(--faint);font-size:19px;line-height:1;transition:color .15s;}
 .hdel:hover{color:var(--red);}
+.hactions{display:flex;align-items:center;gap:9px;flex-shrink:0;}
+.hedit{font-size:13px;line-height:1;opacity:.5;transition:opacity .15s;}
+.hedit:hover{opacity:1;}
+.bin-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);}
+.bin-row:last-child{border-bottom:none;}
+.bin-name{font-weight:600;font-size:14px;cursor:pointer;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bin-name:hover{color:var(--brand);}
+.bin-actions{display:flex;gap:8px;flex-shrink:0;}
+.bin-empty{font-size:13px;color:var(--text-3);}
+.danger-chip{color:var(--red);border-color:#f3c9c9;}
 .hspouse{font-size:10px;padding:2px 8px;border-radius:var(--r-pill);background:var(--sky-soft);color:var(--sky);margin-left:6px;font-weight:700;}
 
 /* ── SETTINGS / ADMIN BODY ─────────────────────────────────────── */
@@ -409,6 +426,18 @@ a{color:inherit;}
 .sync-pill.offline{opacity:1;background:var(--amber-soft);color:var(--amber);border:1px solid #f2d49a;}
 .sync-pill.saved{opacity:0;background:var(--emer-soft);color:var(--emer);}
 @media(min-width:900px){.sync-pill{bottom:18px;}}
+
+/* ── IMPORT REPORT ─────────────────────────────────────────────── */
+.imp-list{max-height:46vh;overflow-y:auto;margin:6px 0 4px;border:1px solid var(--border);border-radius:var(--r-sm);}
+.imp-row{padding:9px 12px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:baseline;}
+.imp-row:last-child{border-bottom:none;}
+.imp-row.error{background:var(--red-soft);}
+.imp-row.warning{background:var(--amber-soft);}
+.imp-rn{font-size:12px;font-weight:700;color:var(--text-3);white-space:nowrap;}
+.imp-nm{font-weight:600;font-size:14px;}
+.imp-msg{grid-column:2;font-size:13px;color:var(--text-2);}
+.imp-row.error .imp-msg{color:var(--red);}
+.imp-row.warning .imp-msg{color:var(--amber);}
 </style>
 </head>
 <body>
@@ -427,7 +456,7 @@ const PRE_ARC=['Not Contacted','Reached Out','Had Conversation','Thinking It Ove
 const POST_ARC=['Thanked','Report Sent','Personal Touch','Event Invited','Ready for Next Ask'];
 const INT_TYPES=['📞 Call','💬 Text','📧 Email','🤝 Meeting','📮 Voicemail','📝 Other','📄 Report','📰 Newsletter'];
 const PAY_PLANS=['Monthly','Quarterly','Yearly','One-time','Specific Date','Custom'];
-const KNOWN_COLS=new Set(['Name','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
+const KNOWN_COLS=new Set(['Name','Household: Account ID','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
 const CHEERS=['Great work! Keep going! 💪','You\'re on fire! 🔥','Every call counts! ✨','Making a difference! 🌟','That\'s what it\'s about! 🙌','Yasher koach! 🏆','Keep the momentum! 🚀','One step closer! ⭐'];
 const HEBREW_RESULT='לא עליך המלאכה לגמור';
 const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
@@ -493,7 +522,14 @@ function readCache(){try{return JSON.parse(localStorage.getItem(cacheKey()));}ca
 
 // ── UTILS ─────────────────────────────────────────────────────────
 function getDonor(id){return donors.find(d=>d.id===id);}
-function campaignDonors(){return activeCampaignId?donors.filter(d=>d.campaignId===activeCampaignId):donors;}
+function campaignDonorsAll(){return activeCampaignId?donors.filter(d=>d.campaignId===activeCampaignId):donors;}
+function isActiveStatus(d){return !d.status||d.status==='active';}
+// Active views/counts/exports all flow through campaignDonors(), so excluding
+// archived + trashed here hides them everywhere at once.
+function campaignDonors(){return campaignDonorsAll().filter(isActiveStatus);}
+function canManageContact(d){return !!currentUser&&(currentUser.role==='admin'||d.ownerId===currentUser.id);}
+function archivedDonors(){return campaignDonorsAll().filter(d=>d.status==='archived'&&canManageContact(d));}
+function trashedDonors(){return campaignDonorsAll().filter(d=>d.status==='trashed'&&canManageContact(d));}
 function updateDonor(id,ch){donors=donors.map(d=>d.id===id?{...d,...ch}:d);markContact(id);}
 function str(v){return String(v==null?'':v).trim();}
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
@@ -562,7 +598,7 @@ function parseDonorRow(row){
   Object.keys(row).forEach(k=>{if(!KNOWN_COLS.has(k)&&str(row[k])!=='')custom[k]=str(row[k]);});
   const high=parseFloat(row['High'])||0;
   const id=str(row['Primary Contact: Contact ID'])||(name+'_'+Math.random().toString(36).slice(2));
-  return{id,name,pName:str(row['Primary Contact: Name']),sName:str(row['Secondary Contact: Name']),
+  return{id,name,householdId:str(row['Household: Account ID']),pName:str(row['Primary Contact: Name']),sName:str(row['Secondary Contact: Name']),
     pPhone:str(get('Primary Contact: Mobile Phone')),sPhone:str(get('Secondary Contact: Mobile Phone')),
     pEmail:str(get('Primary Contact: Email')),sEmail:str(get('Secondary Contact: Email')),
     pId:str(row['Primary Contact: Contact ID']),sId:str(row['Secondary Contact: Contact ID']),
@@ -579,31 +615,98 @@ function parseDonorRow(row){
 function handleFile(file){
   const r=new FileReader();
   r.onload=e=>{
+    let rows;
     try{
       const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+      if(!wb.SheetNames.length){alert('That file has no sheets to read.');return;}
       const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
-      const parsed=rows.map(parseDonorRow).filter(Boolean);
-      if(!parsed.length){alert('No rows with a "Name" column were found.');return;}
+      rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+    }catch(err){alert('Could not read file: '+err.message);return;}
+    if(!rows.length){alert('That sheet is empty — no data rows were found.');return;}
+    if(rows[0]['Name']===undefined){
+      alert('This file doesn’t have a "Name" column, so it can’t be a contact list.\n\nUse "Download sample" to see the expected columns.');return;
+    }
+
+    // Validate every row. Header is spreadsheet row 1, so data row i is row i+2.
+    const issues=[]; // {row, level:'error'|'warning', name, msg}
+    const valid=[];  // parsed contacts that will be imported
+    const seenPid={};
+    rows.forEach((row,i)=>{
+      const excelRow=i+2;
+      const name=str(row['Name']);
+      if(!name){issues.push({row:excelRow,level:'error',name:'',msg:'No Name — row skipped (cannot import).'});return;}
+      const missing=[];
+      if(!str(row['Household: Account ID']))missing.push('Household: Account ID');
+      if(!str(row['Primary Contact: Contact ID']))missing.push('Primary Contact: Contact ID');
+      if(missing.length)issues.push({row:excelRow,level:'warning',name,msg:'Missing '+missing.join(' & ')+' — imports, but won’t sync with Salesforce.'});
+      const pid=str(row['Primary Contact: Contact ID']);
+      if(pid){
+        if(seenPid[pid])issues.push({row:excelRow,level:'warning',name,msg:'Same Primary Contact ID as row '+seenPid[pid]+' — these will be treated as one contact.'});
+        else seenPid[pid]=excelRow;
+      }
+      valid.push(parseDonorRow(row));
+    });
+
+    const doImport=()=>{
       // Preserve any existing activity for contacts already in my list.
-      parsed.forEach(p=>{p.campaignId=activeCampaignId;const ex=campaignDonors().find(d=>d.id===p.id||d.name===p.name);
+      valid.forEach(p=>{p.campaignId=activeCampaignId;const ex=campaignDonorsAll().find(d=>d.id===p.id||d.name===p.name);
         if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
           p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
-          p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];
+          p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];p.status=ex.status;
           p.target=ex.target;p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;}});
       setStatus('saving');
-      api('/contacts/bulk',{method:'POST',body:JSON.stringify({contacts:parsed})})
+      api('/contacts/bulk',{method:'POST',body:JSON.stringify({contacts:valid})})
         .then(res=>{donors=res.contacts||donors;setStatus('saved');writeCache();render();
           alert(`Imported ${res.created} new contact${res.created!==1?'s':''}, updated ${res.updated}${res.skipped?', skipped '+res.skipped+' (no access)':''}.`);})
         .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Import failed: '+err.message);});
-    }catch(err){alert('Could not read file: '+err.message);}
+    };
+
+    if(!valid.length){showImportReport({total:rows.length,valid,issues,onConfirm:null});return;}
+    if(issues.length){showImportReport({total:rows.length,valid,issues,onConfirm:doImport});return;}
+    doImport();
   };
   r.readAsArrayBuffer(file);
 }
 
+// Pre-import review: lists skipped/flagged rows and lets the user import the rest.
+function showImportReport({total,valid,issues,onConfirm}){
+  const errors=issues.filter(x=>x.level==='error').length;
+  const warns=issues.filter(x=>x.level==='warning').length;
+  const shown=issues.slice(0,200);
+  const list=shown.map(x=>`<div class="imp-row ${x.level}"><span class="imp-rn">Row ${x.row}</span><span class="imp-nm">${esc(x.name||'—')}</span><div class="imp-msg">${esc(x.msg)}</div></div>`).join('')
+    +(issues.length>shown.length?`<div class="imp-row"><div class="imp-msg" style="grid-column:1/-1;">…and ${issues.length-shown.length} more.</div></div>`:'');
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Review import</div>
+    <div class="msub">${total} row${total!==1?'s':''} read · <b>${valid.length}</b> ready · ${errors} skipped · ${warns} warning${warns!==1?'s':''}</div>
+    <div class="imp-list">${list||'<div class="imp-row"><div class="imp-msg" style="grid-column:1/-1;">No problems found.</div></div>'}</div>
+    <div class="mrow"><button class="mbtn s" id="imp-cancel">${onConfirm?'Cancel':'Close'}</button>${onConfirm?`<button class="mbtn p" id="imp-go">Import ${valid.length} contact${valid.length!==1?'s':''}</button>`:''}</div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('imp-cancel').onclick=()=>m.remove();
+  if(onConfirm)document.getElementById('imp-go').onclick=()=>{m.remove();onConfirm();};
+}
+
 function downloadSample(){
-  const ws=XLSX.utils.aoa_to_sheet([['Name','Tier','High','Medium','Low','Actual','Amb.','Latest Donation','Latest Donation Date','Largest Donation','2024','2023','Primary Contact: Name','Primary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Name','Secondary Contact: Contact ID','Secondary Contact: Email','Secondary Contact: Mobile Phone','Street','City','State','Postal Code'],['Dr. John & Mrs. Jane Smith','major',10000,7500,5000,8000,'Very engaged',8000,'2024-11-01',10000,8000,6000,'John Smith','SF001','john@example.com','555-100-0001','Jane Smith','SF002','jane@example.com','555-100-0002','123 Main St','Tampa','FL',33601],['Mr. David & Mrs. Sarah Cohen','star',25000,20000,15000,22000,'Top prospect',22000,'2024-10-15',25000,22000,18000,'David Cohen','SF003','david@example.com','555-200-0001','Sarah Cohen','SF004','sarah@example.com','555-200-0002','456 Oak Ave','Orlando','FL',32801]]);
-  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Donors');XLSX.writeFile(wb,'outreach_template.xlsx');
+  const ws=XLSX.utils.aoa_to_sheet([['Name','Household: Account ID','Tier','High','Medium','Low','Actual','Amb.','Latest Donation','Latest Donation Date','Largest Donation','2024','2023','Primary Contact: Name','Primary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Name','Secondary Contact: Contact ID','Secondary Contact: Email','Secondary Contact: Mobile Phone','Street','City','State','Postal Code'],['Dr. John & Mrs. Jane Smith','SFH001','major',10000,7500,5000,8000,'Very engaged',8000,'2024-11-01',10000,8000,6000,'John Smith','SF001','john@example.com','555-100-0001','Jane Smith','SF002','jane@example.com','555-100-0002','123 Main St','Tampa','FL',33601],['Mr. David & Mrs. Sarah Cohen','SFH002','star',25000,20000,15000,22000,'Top prospect',22000,'2024-10-15',25000,22000,18000,'David Cohen','SF003','david@example.com','555-200-0001','Sarah Cohen','SF004','sarah@example.com','555-200-0002','456 Oak Ave','Orlando','FL',32801]]);
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Donors');
+  // A second "Field Guide" sheet documenting which columns matter. The importer
+  // only reads the FIRST sheet, so this is purely for the person filling it in.
+  const guide=XLSX.utils.aoa_to_sheet([
+    ['Column','Required?','What it does'],
+    ['Name','REQUIRED','Household name. A row with no Name is skipped on import.'],
+    ['Household: Account ID','CRITICAL for Salesforce','Salesforce Account ID of the household. Needed to pull financial data onto the right household.'],
+    ['Primary Contact: Contact ID','CRITICAL for Salesforce','Salesforce Contact ID. Needed to log interactions back to Salesforce and to match without duplicating.'],
+    ['Secondary Contact: Contact ID','Recommended','Salesforce Contact ID of the spouse / second person.'],
+    ['Tier','Optional','star / major / mid / general — defaults to general if blank.'],
+    ['High / Medium / Low','Optional','Your manual target amounts (entered by you, not from Salesforce).'],
+    ['Primary/Secondary Contact: Name / Email / Mobile Phone','Optional','Contact details for each person.'],
+    ['Street / City / State / Postal Code','Optional','Mailing address.'],
+    ['(any other column)','Optional','Extra columns are kept on the contact as custom fields.'],
+  ]);
+  guide['!cols']=[{wch:42},{wch:24},{wch:80}];
+  XLSX.utils.book_append_sheet(wb,guide,'Field Guide');
+  XLSX.writeFile(wb,'outreach_template.xlsx');
 }
 
 function exportCSV(){
@@ -613,6 +716,19 @@ function exportCSV(){
     (d.tasks||[]).filter(t=>!t.done).forEach(t=>{rows.push([d.id,d.name,'Follow-up: '+(t.note||'').replace(/,/g,';'),t.due||today(),'','Task','','Open']);});
   });
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([rows.map(r=>r.join(',')).join('\n')],{type:'text/csv'}));a.download='outreach_export_'+today()+'.csv';a.click();
+}
+
+// High-level financial snapshot of the current campaign — just the numbers that
+// matter at a glance: targets (Low/Medium/High) and what's been pledged.
+function exportFinancial(){
+  const ds=campaignDonors();
+  const body=ds.map(d=>[d.name,d.low||0,d.medium||0,d.high||0,d.pledgeAmount||0]);
+  const sum=i=>body.reduce((s,r)=>s+(r[i]||0),0);
+  const aoa=[['Name','Low','Medium','High','Pledged'],...body,[],['TOTAL',sum(1),sum(2),sum(3),sum(4)]];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols']=[{wch:34},{wch:12},{wch:12},{wch:12},{wch:12}];
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Campaign Financials');
+  XLSX.writeFile(wb,'campaign_financials_'+today()+'.xlsx');
 }
 
 // ── VOICE ─────────────────────────────────────────────────────────
@@ -863,7 +979,7 @@ function renderDetail(id){
   const openTasks=(d.tasks||[]).filter(t=>!t.done);const doneTasks=(d.tasks||[]).filter(t=>t.done);
   const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:''}</div><button class="tdel" data-tdel="${t.id}">×</button></div>`).join('');
   const histHTML=(d.interactions||[]).length===0?'<div style="font-size:13px;color:var(--text-3);">No interactions yet.</div>'
-    :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><button class="hdel" data-di="${i.id}">×</button></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
+    :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><div class="hactions"><button class="hedit" data-ei="${i.id}" title="Edit">✏️</button><button class="hdel" data-di="${i.id}" title="Delete">×</button></div></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
   const profileFields=[['Latest Donation',fmt(d.latestDonation)],['Latest Date',d.latestDate],['Largest Donation',fmt(d.largestDonation)],...Object.entries(d.years||{}).filter(([,v])=>v).map(([y,v])=>[y,fmt(v)]),...Object.entries(d.custom||{})].filter(([,v])=>v&&v!=='—');
   const showProfile=profileOpen[did];
   const paymentLog=(d.payments||[]).length>0?`<div style="margin-top:12px;"><div class="subhd">Payment History</div>${[...(d.payments||[])].reverse().map(p=>`<div class="payment-log-item"><span style="font-weight:700;">${fmt(p.amount)}</span><span style="color:var(--text-3);">${fmtDate(p.date)}</span><button style="color:var(--faint);font-size:16px;" data-delpay="${p.id}">×</button></div>`).join('')}</div>`:'';
@@ -880,7 +996,7 @@ function renderDetail(id){
   return`<div class="dhdr">${isDesktop?'':'<button class="backbtn" id="back-btn">←</button>'}<div class="dh-main"><div class="dhtitle">${esc(d.name)}</div><div class="dhsub">${esc(d.city)}${d.state?', '+esc(d.state):''}</div></div><span class="tier-badge" style="background:${tc.bg};color:${tc.color};">${tc.label}</span></div>
   <div class="dbody">
     <div class="card"><div class="ctitle">Donation Targets</div>
-      <div class="tgrid">${[['High',d.high],['Medium',d.medium],['Low',d.low],['Last Year',d.actual]].map(([l,v])=>`<div class="tcell"><div class="tlbl">${l}</div><div class="tval">${fmt(v)}</div></div>`).join('')}</div>
+      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Year</div><div class="tval">${fmt(d.actual)}</div></div></div>
       <label class="field-lbl">My Ask Target This Year</label>
       <div class="r2"><input class="inp" id="target-inp" type="number" value="${d.target||''}" placeholder="Amount…"/><div class="greenbox" id="target-disp">${fmt(d.target)}</div></div>
     </div>
@@ -939,6 +1055,10 @@ function renderDetail(id){
     </div>
     ${openTasks.length>0||doneTasks.length>0?`<div class="card"><div class="ctitle">Follow-up Tasks</div>${taskHTML(openTasks)}${doneTasks.length>0?`<div class="subhd" style="margin:9px 0 3px;">Completed</div>${taskHTML(doneTasks)}`:''}</div>`:''}
     <div class="card"><div class="ctitle">Interaction History (${(d.interactions||[]).length})</div>${histHTML}</div>
+    ${canMng?`<div class="card"><div class="ctitle">Remove Contact</div>
+      <button class="savebtn danger" id="del-contact-btn">🗑 Archive or delete this contact</button>
+      <div style="font-size:12px;color:var(--text-3);margin-top:8px;">Choose to <b>archive</b> (keep the record, e.g. deceased) or move to the <b>Recycle Bin</b>. Both are reversible from Settings.</div>
+    </div>`:''}
   </div>`;
 }
 
@@ -964,7 +1084,15 @@ function renderSettings(){
       </div></div>`).join('')}
     <div class="shead">Export & Templates</div>
     <button class="savebtn" id="export-btn">📥 Export CSV (Salesforce format)</button>
+    <button class="savebtn alt" id="fin-btn" style="margin-top:9px;">📊 Download Financial Snapshot (Excel)</button>
     <button class="savebtn alt" id="sample-btn" style="margin-top:9px;">📋 Download Sample Excel Template</button>
+    <div class="shead">Archived & Recycle Bin</div>
+    <div class="card"><div class="ctitle">🗄 Archived (${archivedDonors().length})</div>
+      ${archivedDonors().length?archivedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button></div></div>`).join(''):'<div class="bin-empty">No archived contacts.</div>'}
+    </div>
+    <div class="card"><div class="ctitle">🗑 Recycle Bin (${trashedDonors().length})</div>
+      ${trashedDonors().length?trashedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button><button class="chip danger-chip" data-purge="${d.id}">Delete forever</button></div></div>`).join(''):'<div class="bin-empty">Recycle bin is empty.</div>'}
+    </div>
   </div>`;
 }
 
@@ -1021,6 +1149,70 @@ function deleteCampaignPrompt(){
       activeCampaignId=(campaigns[0]&&campaigns[0].id)||null;settings.defaultCampaignId=activeCampaignId;markSettings();
       desktopDetailId=null;detailId=null;if(view==='detail')view='list';writeCache();setStatus('saved');render();})
     .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not delete the campaign: '+err.message);});
+}
+// Permanent, irreversible delete (used by the Recycle Bin's "Delete forever").
+function deleteContact(id){
+  const d=getDonor(id);if(!d)return;
+  if(!confirm(`Permanently delete “${d.name}” and everything logged on this contact?\n\nThis cannot be undone.`))return;
+  setStatus('saving');
+  api('/contacts/'+encodeURIComponent(id),{method:'DELETE'})
+    .then(()=>{donors=donors.filter(x=>x.id!==id);dirtyContacts.delete(id);
+      if(desktopDetailId===id)desktopDetailId=null;
+      if(detailId===id){detailId=null;if(view==='detail')view='list';}
+      writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not delete: '+err.message);});
+}
+// Soft state changes: archive / trash / restore (persist as a `status` field).
+function setContactStatus(id,status){
+  if(!getDonor(id))return;
+  updateDonor(id,{status,statusAt:Date.now()});
+  if(desktopDetailId===id)desktopDetailId=null;
+  if(detailId===id){detailId=null;if(view==='detail')view='list';}
+  render();
+}
+function restoreContact(id){if(!getDonor(id))return;updateDonor(id,{status:'active',statusAt:Date.now()});render();}
+// Asks whether to archive (keep) or trash (recycle bin) when removing a contact.
+function showRemoveOptions(id){
+  const d=getDonor(id);if(!d)return;
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Remove ${esc(d.name)}?</div>
+    <div class="msub">Choose what happens to this contact. Both can be undone from Settings → Archived &amp; Recycle Bin.</div>
+    <button class="savebtn alt" id="ro-archive" style="text-align:left;margin-bottom:10px;">🗄 Archive — keep the full record (e.g. deceased / inactive), just hide it from active lists.</button>
+    <button class="savebtn danger" id="ro-trash" style="text-align:left;">🗑 Move to Recycle Bin — restore later, or delete it forever.</button>
+    <div class="mrow" style="margin-top:14px;"><button class="mbtn s" id="ro-cancel">Cancel</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('ro-cancel').onclick=()=>m.remove();
+  document.getElementById('ro-archive').onclick=()=>{m.remove();setContactStatus(id,'archived');};
+  document.getElementById('ro-trash').onclick=()=>{m.remove();setContactStatus(id,'trashed');};
+}
+// Edit a logged interaction (type / who / date / note).
+function showEditInteraction(did,iid){
+  const d=getDonor(did);if(!d)return;
+  const it=(d.interactions||[]).find(i=>i.id===iid);if(!it)return;
+  const typeOpts=INT_TYPES.map(t=>`<option value="${esc(t)}" ${it.type===t?'selected':''}>${esc(t)}</option>`).join('');
+  const spouseLabels=['Primary',...(d.sName?['Secondary','Both']:[])].map(s=>s==='Primary'?(d.pName||'Primary'):s==='Secondary'?(d.sName||'Secondary'):'Both');
+  const spouseOpts=spouseLabels.map(l=>`<option value="${esc(l)}" ${it.spouse===l?'selected':''}>${esc(l)}</option>`).join('');
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Edit Interaction</div>
+    <div class="mfield"><label class="mlbl">Type</label><select class="msel" id="ei-type">${typeOpts}</select></div>
+    ${d.sName?`<div class="mfield"><label class="mlbl">Spoke with</label><select class="msel" id="ei-spouse">${spouseOpts}</select></div>`:''}
+    <div class="mfield"><label class="mlbl">Date</label><input class="minp" id="ei-date" type="date" value="${esc(it.date||'')}"/></div>
+    <div class="mfield"><label class="mlbl">Note</label><textarea class="mta" id="ei-note">${esc(it.note||'')}</textarea></div>
+    <div class="mrow"><button class="mbtn s" id="ei-cancel">Cancel</button><button class="mbtn p" id="ei-save">Save</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('ei-cancel').onclick=()=>m.remove();
+  document.getElementById('ei-save').onclick=()=>{
+    const type=document.getElementById('ei-type').value;
+    const date=document.getElementById('ei-date').value;
+    const note=document.getElementById('ei-note').value;
+    const spEl=document.getElementById('ei-spouse');const spouse=spEl?spEl.value:it.spouse;
+    const interactions=(d.interactions||[]).map(i=>i.id===iid?{...i,type,date,note,spouse}:i);
+    updateDonor(did,{interactions});m.remove();render();
+  };
 }
 function navHTML(){
   const due=overdueTasks().length+todayTasks().length;
@@ -1133,8 +1325,10 @@ function attachEvents(){
   document.getElementById('back-btn')?.addEventListener('click',()=>{view='list';render();});
   document.getElementById('profile-toggle')?.addEventListener('click',()=>{profileOpen[activeDetailId]=!profileOpen[activeDetailId];render();});
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
+  document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
 
   document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});const el=document.getElementById('target-disp');if(el)el.textContent=fmt(v);});
+  document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{[e.target.dataset.tgt]:v});}));
   document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
   document.getElementById('pledge-amt')?.addEventListener('change',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{pledgeAmount:v});const d=getDonor(activeDetailId);if(d&&v>0&&d.preArcStage<4)updateDonor(activeDetailId,{preArcStage:4});render();});
   document.querySelectorAll('[data-payplan]').forEach(b=>b.addEventListener('click',()=>{updateDonor(activeDetailId,{pledgePlan:b.dataset.payplan,pledgePlanNote:''});render();}));
@@ -1148,7 +1342,7 @@ function attachEvents(){
   document.querySelectorAll('[data-arc]').forEach(dot=>dot.addEventListener('click',()=>{const d=getDonor(activeDetailId);if(!d)return;const i=parseInt(dot.dataset.arc);if(d.postArcStage!==undefined)updateDonor(activeDetailId,{postArcStage:i});else updateDonor(activeDetailId,{preArcStage:i});render();}));
   document.getElementById('to-post-btn')?.addEventListener('click',()=>{updateDonor(activeDetailId,{postArcStage:0});render();});
   document.getElementById('to-pre-btn')?.addEventListener('click',()=>{updateDonor(activeDetailId,{postArcStage:undefined});render();});
-  document.querySelectorAll('[data-itype]').forEach(b=>b.addEventListener('click',()=>{logType=b.dataset.itype;render();}));
+  document.querySelectorAll('[data-itype]').forEach(b=>b.addEventListener('click',()=>{logType=b.dataset.itype;document.querySelectorAll('[data-itype]').forEach(x=>x.classList.toggle('on',x.dataset.itype===logType));}));
   document.getElementById('spouse-sel')?.addEventListener('change',e=>{logSpouse=e.target.value;});
   document.getElementById('mic-log-note')?.addEventListener('click',()=>{if(micActive&&micTarget==='log-note')stopMic();else startMic('log-note');});
   document.getElementById('mic-fu-note')?.addEventListener('click',()=>{if(micActive&&micTarget==='fu-note')stopMic();else startMic('fu-note');});
@@ -1168,12 +1362,16 @@ function attachEvents(){
   document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).map(t=>t.id===parseInt(b.dataset.td)?{...t,done:!t.done}:t)});render();}));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).filter(t=>t.id!==parseInt(b.dataset.tdel))});render();}));
   document.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{interactions:(d.interactions||[]).filter(i=>i.id!==parseInt(b.dataset.di))});render();}));
+  document.querySelectorAll('[data-ei]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showEditInteraction(activeDetailId,parseInt(b.dataset.ei));}));
   document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');const d=getDonor(did);if(!d)return;updateDonor(did,{tasks:(d.tasks||[]).map(t=>String(t.id)===tid?{...t,done:true}:t)});render();}));
   document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.goto)));
 
   // Settings
   document.querySelectorAll('[data-st]').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.st,f=b.dataset.sf;settings.tierDefaults[t][f]=Math.max(0,settings.tierDefaults[t][f]+parseInt(b.dataset.dir));markSettings();const el=document.getElementById(`s-${t}-${f==='retail'?'r':'w'}`);if(el)el.textContent=settings.tierDefaults[t][f];}));
+  document.querySelectorAll('[data-restore]').forEach(b=>b.addEventListener('click',()=>restoreContact(b.dataset.restore)));
+  document.querySelectorAll('[data-purge]').forEach(b=>b.addEventListener('click',()=>deleteContact(b.dataset.purge)));
   document.getElementById('export-btn')?.addEventListener('click',exportCSV);
+  document.getElementById('fin-btn')?.addEventListener('click',exportFinancial);
   document.getElementById('sample-btn')?.addEventListener('click',downloadSample);
 
   // Admin
