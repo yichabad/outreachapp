@@ -65,7 +65,7 @@ a{color:inherit;}
 }
 @media(max-width:899px){
   .mobile{padding-bottom:74px;}
-  .greenbox{padding:8px 11px;font-size:13px;font-weight:700;background:transparent;color:var(--text-3);align-self:center;}
+  .greenbox{padding:8px 11px;font-size:13px;font-weight:700;background:transparent;color:var(--brand);align-self:center;}
 }
 
 /* ── SIDEBAR / BOTTOM NAV ──────────────────────────────────────── */
@@ -194,7 +194,7 @@ a{color:inherit;}
 .r2{display:flex;gap:9px;margin-top:7px;}
 .inp{flex:1;padding:10px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);outline:none;transition:all .15s;}
 .inp:focus{border-color:var(--brand);background:var(--surface);box-shadow:0 0 0 3px var(--brand-soft);}
-.greenbox{padding:10px 14px;background:var(--emer-soft);border-radius:var(--r-sm);font-weight:800;color:var(--emer);display:flex;align-items:center;white-space:nowrap;}
+.greenbox{padding:10px 14px;background:var(--brand-soft);border-radius:var(--r-sm);font-weight:800;color:var(--brand);display:flex;align-items:center;white-space:nowrap;}
 .clink{display:block;color:var(--brand);font-weight:600;text-decoration:none;margin-bottom:2px;padding:6px 0;transition:color .15s;}
 .clink:hover{color:var(--brand-strong);}
 .nbox{margin-top:10px;padding:11px 13px;background:var(--amber-soft);border:1px solid #f6e2bf;border-radius:var(--r-sm);font-size:13px;color:#7a5212;line-height:1.5;}
@@ -824,12 +824,13 @@ function donorRowHTML(d,pledgedTab,isSelected){
   const cb=bulkMode?`<div class="dcb${bulkSel.has(d.id)?' on':''}" data-cbid="${d.id}">${bulkSel.has(d.id)?'✓':''}</div>`:'';
   if(bulkMode)return`<div class="drow compact${bulkSel.has(d.id)?' bulk-on':''}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div></div></div>`;
   const pledgePct=d.pledgeAmount>0?Math.min(100,Math.round((d.pledgePaid||0)/d.pledgeAmount*100)):0;
+  const planLabel=d.pledgePlan?(d.pledgePlan==='Specific Date'&&d.pledgePlanNote?'📅 Due '+fmtDate(d.pledgePlanNote):'📅 '+d.pledgePlan+(d.pledgePlanNote&&d.pledgePlan!=='Specific Date'?' · '+esc(d.pledgePlanNote):'')):'';
   const bottomSection=pledgedTab
-    ?d.pledgeAmount>0?`<div style="margin-top:6px;"><div class="mbar-bg"><div style="background:${fulfilled?'var(--emer)':'var(--amber)'};border-radius:999px;height:4px;width:${pledgePct}%;"></div></div><div style="font-size:9.5px;color:${fulfilled?'var(--emer)':'var(--text-3)'};margin-top:3px;font-weight:700;">${fulfilled?'✅ Fully paid':fmt(d.pledgePaid||0)+' paid · '+pledgePct+'%'}${d.pledgePlan?' · '+d.pledgePlan:''}</div></div>`
+    ?d.pledgeAmount>0?`<div style="margin-top:6px;"><div class="mbar-bg"><div style="background:var(--emer);border-radius:999px;height:4px;width:${pledgePct}%;"></div></div><div style="font-size:9.5px;margin-top:3px;font-weight:700;">${fulfilled?`<span style="color:var(--emer);">✅ Fully paid</span>`:`<span style="color:var(--emer);">${fmt(d.pledgePaid||0)} paid</span> <span style="color:var(--text-3);">· ${pledgePct}%</span>`}</div>${planLabel?`<div style="font-size:9.5px;color:var(--amber);margin-top:2px;font-weight:700;">${planLabel}</div>`:''}</div>`
     :'<div style="font-size:9.5px;color:var(--text-3);margin-top:4px;">No pledge recorded yet</div>'
     :miniBarsHTML(d,false);
   const rowClass=`drow${(d.interactions||[]).length>0?' touched':''}${hasOD?' overdue':''}${fulfilled?' fulfilled':''}${isSelected?' selected-row':''}`;
-  return`<div class="${rowClass}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div>${last?`<div class="dlast">${last.type}${last.spouse?' ('+esc(last.spouse)+')':''} ${last.date?'· '+fmtDate(last.date):''} — ${esc((last.note||'').slice(0,42))}${(last.note||'').length>42?'…':''}</div>`:''} ${bottomSection}</div><div class="dright"><div class="damt">${pledgedTab?(d.pledgeAmount>0?fmt(d.pledgeAmount):fmt(d.target)):fmt(d.target)}</div>${!pledgedTab&&d.actual>0?`<div class="dwas">was ${fmt(d.actual)}</div>`:''} ${pledgedTab&&fulfilled?'<div style="font-size:11px;color:var(--emer);margin-top:2px;">✅</div>':''}</div></div>`;
+  return`<div class="${rowClass}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div>${last?`<div class="dlast">${last.type}${last.spouse?' ('+esc(last.spouse)+')':''} ${last.date?'· '+fmtDate(last.date):''} — ${esc((last.note||'').slice(0,42))}${(last.note||'').length>42?'…':''}</div>`:''} ${bottomSection}</div><div class="dright"><div class="damt"${pledgedTab&&d.pledgeAmount>0?' style="color:var(--amber);"':''}>${pledgedTab?(d.pledgeAmount>0?fmt(d.pledgeAmount):fmt(d.target)):fmt(d.target)}</div>${!pledgedTab&&d.actual>0?`<div class="dwas">was ${fmt(d.actual)}</div>`:''} ${pledgedTab&&fulfilled?'<div style="font-size:11px;color:var(--emer);margin-top:2px;">✅</div>':''}</div></div>`;
 }
 
 function getFiltered(){
@@ -1020,16 +1021,16 @@ function renderDetail(id){
     </div>
     <div class="card"><div class="ctitle">${isPost?'Appreciation Track':'Campaign Journey'}</div>
       ${arcHTML(d,true)}
-      ${!isPost?`<button class="chip" id="to-post-btn" style="font-size:11px;margin-top:4px;">→ Mark Donated & start Appreciation track</button>`:`<button class="chip" id="to-pre-btn" style="font-size:11px;margin-top:4px;">← Back to Campaign track</button>`}
+      ${!isPost?`<button class="chip" id="to-post-btn" style="font-size:11px;margin-top:4px;">✓ Mark as Pledged / Donated</button>`:`<button class="chip" id="to-pre-btn" style="font-size:11px;margin-top:4px;">← Back to Courting track</button>`}
     </div>
     ${arcStage>=4&&!isPost||isPledged(d)?`<div class="card"><div class="ctitle">Pledge Details</div>
       <div class="pledge-box">
-        <div class="pledge-row"><span>Pledge Amount</span><input id="pledge-amt" type="number" value="${d.pledgeAmount||''}" placeholder="$0" style="width:110px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/></div>
-        ${d.pledgeAmount>0?`<div class="tp-bg" style="background:#cdebdd;"><div style="background:${fulfilled?'var(--emer)':'var(--amber)'};border-radius:999px;height:7px;width:${pledgePct}%;transition:width .4s;"></div></div>
-        <div style="font-size:11.5px;color:${fulfilled?'var(--emer)':'var(--text-2)'};margin-top:5px;text-align:right;font-weight:600;">${fulfilled?'✅ Fully paid — '+fmt(d.pledgePaid):fmt(d.pledgePaid||0)+' paid of '+fmt(d.pledgeAmount)+' ('+pledgePct+'%)'}</div>
+        <div class="pledge-row"><span>Pledge Amount</span><span style="display:flex;gap:6px;align-items:center;"><input id="pledge-amt" type="number" value="${d.pledgeAmount||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="pledge-amt-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></span></div>
+        ${d.pledgeAmount>0?`<div class="tp-bg" style="background:var(--amber-soft);"><div style="background:var(--emer);border-radius:999px;height:7px;width:${pledgePct}%;transition:width .4s;"></div></div>
+        <div style="font-size:11.5px;margin-top:5px;text-align:right;font-weight:600;">${fulfilled?`<span style="color:var(--emer);">✅ Fully paid — ${fmt(d.pledgePaid)}</span>`:`<span style="color:var(--emer);">${fmt(d.pledgePaid||0)} paid</span> of <span style="color:var(--amber);">${fmt(d.pledgeAmount)} pledged</span> (${pledgePct}%)`}</div>
         <div class="subhd" style="margin:11px 0 5px;">Payment Plan</div>
         <div class="pay-plan-grid">${payPlanBtns}</div>
-        ${(d.pledgePlan==='Specific Date'||d.pledgePlan==='Custom'||d.pledgePlan==='Monthly')?`<input class="inp" id="pledge-plan-note" placeholder="${d.pledgePlan==='Monthly'?'e.g. 1st of each month':d.pledgePlan==='Specific Date'?'Payment date…':'Describe plan…'}" value="${d.pledgePlanNote||''}" style="width:100%;margin-top:9px;background:#fff;"/>`:'' }
+        ${d.pledgePlan==='Specific Date'?`<label class="field-lbl" style="margin-top:9px;">Expected payment date</label><input class="inp" id="pledge-plan-date" type="date" value="${esc(d.pledgePlanNote||'')}" style="width:100%;background:#fff;"/><div style="font-size:11.5px;color:var(--text-3);margin-top:5px;">📌 A follow-up task is added for this date.</div>`:(d.pledgePlan==='Custom'||d.pledgePlan==='Monthly')?`<input class="inp" id="pledge-plan-note" placeholder="${d.pledgePlan==='Monthly'?'e.g. 1st of each month':'Describe plan…'}" value="${esc(d.pledgePlanNote||'')}" style="width:100%;margin-top:9px;background:#fff;"/>`:''}
         <div class="subhd" style="margin:13px 0 5px;">Log a Payment</div>
         <div style="display:flex;gap:8px;"><input class="inp" id="pay-amount" type="number" placeholder="Amount…" style="flex:1;background:#fff;"/><input class="inp" id="pay-date" type="date" value="${today()}" style="flex:1;background:#fff;"/><button class="savebtn" id="log-pay-btn" style="flex:0;padding:9px 14px;font-size:13px;">Add</button></div>
         ${paymentLog}`:''}
@@ -1055,7 +1056,10 @@ function renderDetail(id){
         <button class="micbtn" id="mic-fu-note">🎤</button>
         <input class="inp" id="fu-date" type="date" style="flex:1;"/>
       </div>
-      <button class="savebtn" id="save-log-btn">Save Interaction</button>
+      <div style="display:flex;gap:8px;">
+        <button class="savebtn alt" id="add-task-btn" style="flex:1;">+ Add task only</button>
+        <button class="savebtn" id="save-log-btn" style="flex:2;">Save Interaction</button>
+      </div>
     </div>
     ${openTasks.length>0||doneTasks.length>0?`<div class="card"><div class="ctitle">Follow-up Tasks</div>${taskHTML(openTasks)}${doneTasks.length>0?`<div class="subhd" style="margin:9px 0 3px;">Completed</div>${taskHTML(doneTasks)}`:''}</div>`:''}
     <div class="card"><div class="ctitle">Interaction History (${(d.interactions||[]).length})</div>${histHTML}</div>
@@ -1371,9 +1375,19 @@ function attachEvents(){
   document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});const el=document.getElementById('target-disp');if(el)el.textContent=fmt(v);});
   document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{[e.target.dataset.tgt]:v});}));
   document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
-  document.getElementById('pledge-amt')?.addEventListener('change',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{pledgeAmount:v});const d=getDonor(activeDetailId);if(d&&v>0&&d.preArcStage<4)updateDonor(activeDetailId,{preArcStage:4});render();});
+  const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
+  document.getElementById('pledge-amt')?.addEventListener('change',savePledgeAmt);
+  document.getElementById('pledge-amt-save')?.addEventListener('click',savePledgeAmt);
   document.querySelectorAll('[data-payplan]').forEach(b=>b.addEventListener('click',()=>{updateDonor(activeDetailId,{pledgePlan:b.dataset.payplan,pledgePlanNote:''});render();}));
   document.getElementById('pledge-plan-note')?.addEventListener('change',e=>{updateDonor(activeDetailId,{pledgePlanNote:e.target.value});});
+  // Setting an expected payment date creates/updates a single follow-up task for it.
+  document.getElementById('pledge-plan-date')?.addEventListener('change',e=>{const date=e.target.value;const d=getDonor(activeDetailId);if(!d)return;
+    let tasks=(d.tasks||[]).map(t=>t.pledgeFollowup?{...t,due:date,done:false}:t);
+    if(date&&!tasks.some(t=>t.pledgeFollowup))tasks=[...tasks,{id:Date.now(),note:'Follow up: pledge payment expected',due:date,done:false,pledgeFollowup:true}];
+    updateDonor(activeDetailId,{pledgePlanNote:date,tasks});render();});
+  document.getElementById('add-task-btn')?.addEventListener('click',()=>{const el=document.getElementById('fu-note');const fuNote=el?.value.trim();const fuDate=document.getElementById('fu-date')?.value;const d=getDonor(activeDetailId);if(!d)return;
+    if(!fuNote){if(el){el.focus();el.style.borderColor='var(--red)';el.placeholder='Enter a task before adding…';}return;}
+    updateDonor(activeDetailId,{tasks:[...(d.tasks||[]),{id:Date.now(),note:fuNote,due:fuDate||'',done:false}]});render();});
   document.getElementById('log-pay-btn')?.addEventListener('click',()=>{
     const amt=parseFloat(document.getElementById('pay-amount')?.value)||0;const date=document.getElementById('pay-date')?.value||today();if(!amt)return;
     const d=getDonor(activeDetailId);if(!d)return;const payments=[...(d.payments||[]),{id:Date.now(),amount:amt,date}];updateDonor(activeDetailId,{payments,pledgePaid:payments.reduce((s,p)=>s+p.amount,0)});render();});
