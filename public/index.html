@@ -1264,9 +1264,18 @@ function navHTML(){
 const EMPTY_DETAIL='<div class="right-empty"><div><div class="re-icon">👈</div><div>Select a contact to view details</div></div></div>';
 
 // ── MAIN RENDER ────────────────────────────────────────────────────
+// Identifies "where" we are, so a re-render that stays put (e.g. editing a
+// contact) can keep its scroll position instead of jumping to the top.
+let lastRenderKey=null;
+function renderKey(){const isD=window.innerWidth>=900;return view+'|'+(isD?(desktopDetailId||''):(detailId||''))+'|'+(isD?'d':'m');}
+const SCROLLERS=['.right-panel','.left-scroll','.page'];
 function render(){
   if(!currentUser){renderLogin();return;}
   const isDesktop=window.innerWidth>=900;
+  // Preserve scroll only when re-rendering the same place (not on navigation).
+  const samePlace=renderKey()===lastRenderKey;
+  const saved={};
+  if(samePlace){SCROLLERS.forEach(s=>{const el=document.querySelector(s);if(el)saved[s]=el.scrollTop;});saved.__win=window.scrollY;}
   let leftContent='',rightContent='';
   if(view==='dashboard')leftContent=renderDashboard();
   else if(view==='list')leftContent=renderList();
@@ -1294,6 +1303,8 @@ function render(){
     app.innerHTML=`<div class="mobile">${leftContent}</div>${nav}`;
   }
   attachEvents();
+  if(samePlace){SCROLLERS.forEach(s=>{const el=document.querySelector(s);if(el&&saved[s]!=null)el.scrollTop=saved[s];});if(saved.__win!=null)window.scrollTo(0,saved.__win);}
+  lastRenderKey=renderKey();
 }
 
 // ── EVENTS ─────────────────────────────────────────────────────────
@@ -1435,7 +1446,7 @@ function attachDonorEvents(){
         const bw=document.getElementById('bw-btn');if(bw)bw.disabled=bulkSel.size===0;
         const ball=document.getElementById('ball-btn');if(ball)ball.textContent=(bulkSel.size>=getFiltered().length&&getFiltered().length>0)?'Clear all':'Select all';
         return;}
-      if(isDesktop){desktopDetailId=el.dataset.id;const rp=document.querySelector('.right-panel');if(rp){rp.innerHTML=renderDetail(desktopDetailId);attachEvents();}
+      if(isDesktop){desktopDetailId=el.dataset.id;const rp=document.querySelector('.right-panel');if(rp){rp.innerHTML=renderDetail(desktopDetailId);attachEvents();rp.scrollTop=0;lastRenderKey=renderKey();}
         document.querySelectorAll('.drow').forEach(r=>r.classList.remove('selected-row'));el.classList.add('selected-row');}
       else{detailId=el.dataset.id;view='detail';render();}
     });
