@@ -307,6 +307,10 @@ a{color:inherit;}
 .chai-toggle{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--text-2);cursor:pointer;line-height:1.4;}
 .chai-toggle input{margin-top:2px;width:16px;height:16px;flex-shrink:0;accent-color:var(--brand);}
 .chai-badge{font-size:10px;font-weight:800;padding:3px 9px;border-radius:var(--r-pill);background:var(--brand-soft);color:var(--brand);white-space:nowrap;margin-right:6px;}
+.ef-row{display:flex;gap:6px;align-items:center;margin-bottom:7px;}
+.ef-row .ef-name,.ef-row .ef-val{flex:1;min-width:0;}
+.ef-del{color:var(--faint);font-size:20px;line-height:1;flex-shrink:0;padding:0 4px;}
+.ef-del:hover{color:var(--red);}
 .hspouse{font-size:10px;padding:2px 8px;border-radius:var(--r-pill);background:var(--sky-soft);color:var(--sky);margin-left:6px;font-weight:700;}
 
 /* ── SETTINGS / ADMIN BODY ─────────────────────────────────────── */
@@ -1016,7 +1020,7 @@ function renderDetail(id){
       <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:66px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
     </div>
     ${accessCard}
-    ${profileFields.length>0?`<div class="card"><button class="coll-toggle" id="profile-toggle">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} fields)</button>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join('')}</div>`:''}</div>`:''}
+    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><button class="coll-toggle" id="profile-toggle" style="flex:1;text-align:left;">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})</button><button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button></div>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`:''}</div>
     <div class="card"><div class="ctitle">Tier</div><div class="chips">${tierBtns}</div>
       <div style="display:flex;gap:14px;margin-top:13px;">
         <div style="flex:1;"><div class="field-lbl">📞 Retail / yr</div><div class="tp-adj-row"><button class="tadj" data-adj="retail" data-dir="-1">−</button><span class="tcnt" id="ret-disp">${d.retailTarget||1}</span><button class="tadj" data-adj="retail" data-dir="1">+</button></div></div>
@@ -1203,6 +1207,34 @@ function showRemoveOptions(id){
   document.getElementById('ro-archive').onclick=()=>{m.remove();setContactStatus(id,'archived');};
   document.getElementById('ro-trash').onclick=()=>{m.remove();setContactStatus(id,'trashed');};
 }
+// Edit optional additional (custom) fields — quick-pick common ones or add your own.
+function showEditFields(id){
+  const d=getDonor(id);if(!d)return;
+  const QUICK=['Yom Kippur Appeal','Kiddush Sponsor','Capital Campaign','Sefer Torah','Building Fund'];
+  const rowHTML=(name,val)=>`<div class="ef-row"><input class="minp ef-name" placeholder="Field name" value="${esc(name||'')}"/><input class="minp ef-val" placeholder="Value (e.g. Yes, $500…)" value="${esc(val||'')}"/><button class="ef-del" title="Remove">×</button></div>`;
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Additional Fields</div>
+    <div class="msub">Optional info you track manually. These also come in from your Excel import.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0;">${QUICK.map(q=>`<button class="chip ef-quick" data-q="${esc(q)}">+ ${esc(q)}</button>`).join('')}</div>
+    <div id="ef-rows">${Object.entries(d.custom||{}).map(([k,v])=>rowHTML(k,v)).join('')}</div>
+    <button class="savebtn alt" id="ef-add" style="margin-top:4px;">+ Add your own field</button>
+    <div class="mrow" style="margin-top:13px;"><button class="mbtn s" id="ef-cancel">Cancel</button><button class="mbtn p" id="ef-save">Save</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  const rows=m.querySelector('#ef-rows');
+  const bindDel=()=>m.querySelectorAll('.ef-del').forEach(b=>b.onclick=()=>b.closest('.ef-row').remove());
+  const addRow=(n,v)=>{rows.insertAdjacentHTML('beforeend',rowHTML(n,v));bindDel();const last=rows.lastElementChild;last.querySelector(v?'.ef-val':'.ef-name').focus();};
+  bindDel();
+  m.querySelectorAll('.ef-quick').forEach(b=>b.onclick=()=>addRow(b.dataset.q,''));
+  m.querySelector('#ef-add').onclick=()=>addRow('','');
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  m.querySelector('#ef-cancel').onclick=()=>m.remove();
+  m.querySelector('#ef-save').onclick=()=>{
+    const custom={};
+    m.querySelectorAll('.ef-row').forEach(r=>{const n=r.querySelector('.ef-name').value.trim();const v=r.querySelector('.ef-val').value.trim();if(n)custom[n]=v;});
+    updateDonor(id,{custom});m.remove();render();
+  };
+}
 // Edit the household's primary/secondary contact info (name / mobile / email).
 function showEditContacts(id){
   const d=getDonor(id);if(!d)return;
@@ -1379,6 +1411,7 @@ function attachEvents(){
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
   document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
   document.getElementById('edit-contacts-btn')?.addEventListener('click',()=>showEditContacts(activeDetailId));
+  document.getElementById('edit-fields-btn')?.addEventListener('click',()=>showEditFields(activeDetailId));
 
   document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});const el=document.getElementById('target-disp');if(el)el.textContent=fmt(v);});
   document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{[e.target.dataset.tgt]:v});}));
