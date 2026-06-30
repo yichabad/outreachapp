@@ -38,6 +38,8 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
+body{overflow-x:hidden;}
+@media(max-width:899px){.mobile{max-width:100%;overflow-x:hidden;}.mobile .card{overflow-x:hidden;}}
 body{font-family:var(--sans);background:var(--bg);color:var(--text);font-size:15px;line-height:1.45;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
 button,input,select,textarea{font-family:inherit;color:inherit;font-size:inherit;}
 button{cursor:pointer;border:none;background:none;}
@@ -1033,8 +1035,8 @@ function renderDetail(id){
     </div>
     <div class="card"><div class="ctitle">♾️ Chai Club / Monthly Giver</div>
       <label class="chai-toggle"><input type="checkbox" id="chai-toggle" ${d.chaiClub?'checked':''}/><span>Gives monthly — counts as given, no payment tracking needed</span></label>
-      ${d.chaiClub?`<div style="margin-top:11px;display:flex;gap:8px;align-items:center;"><span style="font-size:13px;color:var(--text-2);width:150px;flex-shrink:0;">Monthly amount</span><input id="chai-monthly" type="number" value="${d.chaiMonthly||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/></div>
-      <div style="margin-top:9px;display:flex;gap:8px;align-items:center;"><span style="font-size:13px;color:var(--text-2);width:150px;flex-shrink:0;">+ Annual campaign <span style="color:var(--text-3);font-weight:400;">(optional)</span></span><input id="chai-annual" type="number" value="${d.chaiAnnual||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="chai-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></div>
+      ${d.chaiClub?`<div style="margin-top:11px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;color:var(--text-2);flex:1;min-width:110px;">Monthly amount</span><input id="chai-monthly" type="number" value="${d.chaiMonthly||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/></div>
+      <div style="margin-top:9px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;color:var(--text-2);flex:1;min-width:110px;">+ Annual campaign <span style="color:var(--text-3);font-weight:400;">(optional)</span></span><input id="chai-annual" type="number" value="${d.chaiAnnual||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="chai-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></div>
       <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Leave the annual blank for members who commit to the monthly only.</div>
       <div style="font-size:13px;color:var(--emer);margin-top:10px;font-weight:800;background:var(--emer-soft, #ecfdf5);border-radius:8px;padding:9px 11px;">${(d.chaiAnnual||0)>0?`Pledged for the year: ${fmt((d.chaiMonthly||0)*12+(d.chaiAnnual||0))} <span style="font-weight:600;color:var(--text-2);">(${fmt((d.chaiMonthly||0)*12)} monthly + ${fmt(d.chaiAnnual||0)} annual)</span> · counted as given ✓`:`Pledged for the year: ${fmt((d.chaiMonthly||0)*12)} <span style="font-weight:600;color:var(--text-2);">(${fmt(d.chaiMonthly||0)}/mo × 12)</span> · counted as given ✓`}</div>`:''}
     </div>
