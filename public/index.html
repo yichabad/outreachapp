@@ -833,7 +833,7 @@ function donorRowHTML(d,pledgedTab,isSelected){
   const pledgePct=d.pledgeAmount>0?Math.min(100,Math.round((d.pledgePaid||0)/d.pledgeAmount*100)):0;
   const planLabel=d.pledgePlan?(d.pledgePlan==='Specific Date'&&d.pledgePlanNote?'📅 Due '+fmtDate(d.pledgePlanNote):'📅 '+d.pledgePlan+(d.pledgePlanNote&&d.pledgePlan!=='Specific Date'?' · '+esc(d.pledgePlanNote):'')):'';
   const bottomSection=pledgedTab
-    ?d.chaiClub?`<div style="margin-top:6px;font-size:9.5px;color:var(--emer);font-weight:700;">♾️ Chai Club · ${fmt(d.chaiMonthly||0)}/mo · ${fmt((d.chaiMonthly||0)*12)}/yr ✓</div>`
+    ?d.chaiClub?`<div style="margin-top:6px;font-size:9.5px;color:var(--emer);font-weight:700;">♾️ Chai Club · ${fmt(d.chaiMonthly||0)}/mo${(d.chaiAnnual||0)>0?` + ${fmt(d.chaiAnnual)} annual`:''} · ${fmt((d.chaiMonthly||0)*12+(d.chaiAnnual||0))}/yr ✓</div>`
     :d.pledgeAmount>0?`<div style="margin-top:6px;"><div class="mbar-bg"><div style="background:var(--emer);border-radius:999px;height:4px;width:${pledgePct}%;"></div></div><div style="font-size:9.5px;margin-top:3px;font-weight:700;">${fulfilled?`<span style="color:var(--emer);">✅ Fully paid</span>`:`<span style="color:var(--emer);">${fmt(d.pledgePaid||0)} paid</span> <span style="color:var(--text-3);">· ${pledgePct}%</span>`}</div>${planLabel?`<div style="font-size:9.5px;color:var(--amber);margin-top:2px;font-weight:700;">${planLabel}</div>`:''}</div>`
     :'<div style="font-size:9.5px;color:var(--text-3);margin-top:4px;">No pledge recorded yet</div>'
     :miniBarsHTML(d,false);
@@ -1033,7 +1033,10 @@ function renderDetail(id){
     </div>
     <div class="card"><div class="ctitle">♾️ Chai Club / Monthly Giver</div>
       <label class="chai-toggle"><input type="checkbox" id="chai-toggle" ${d.chaiClub?'checked':''}/><span>Gives monthly — counts as given, no payment tracking needed</span></label>
-      ${d.chaiClub?`<div style="margin-top:11px;display:flex;gap:8px;align-items:center;"><span style="font-size:13px;color:var(--text-2);">Monthly</span><input id="chai-monthly" type="number" value="${d.chaiMonthly||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="chai-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></div><div style="font-size:12.5px;color:var(--emer);margin-top:8px;font-weight:700;">= ${fmt((d.chaiMonthly||0)*12)} / year · counted as given ✓</div>`:''}
+      ${d.chaiClub?`<div style="margin-top:11px;display:flex;gap:8px;align-items:center;"><span style="font-size:13px;color:var(--text-2);width:150px;flex-shrink:0;">Monthly amount</span><input id="chai-monthly" type="number" value="${d.chaiMonthly||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/></div>
+      <div style="margin-top:9px;display:flex;gap:8px;align-items:center;"><span style="font-size:13px;color:var(--text-2);width:150px;flex-shrink:0;">+ Annual campaign <span style="color:var(--text-3);font-weight:400;">(optional)</span></span><input id="chai-annual" type="number" value="${d.chaiAnnual||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="chai-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Leave the annual blank for members who commit to the monthly only.</div>
+      <div style="font-size:13px;color:var(--emer);margin-top:10px;font-weight:800;background:var(--emer-soft, #ecfdf5);border-radius:8px;padding:9px 11px;">${(d.chaiAnnual||0)>0?`Pledged for the year: ${fmt((d.chaiMonthly||0)*12+(d.chaiAnnual||0))} <span style="font-weight:600;color:var(--text-2);">(${fmt((d.chaiMonthly||0)*12)} monthly + ${fmt(d.chaiAnnual||0)} annual)</span> · counted as given ✓`:`Pledged for the year: ${fmt((d.chaiMonthly||0)*12)} <span style="font-weight:600;color:var(--text-2);">(${fmt(d.chaiMonthly||0)}/mo × 12)</span> · counted as given ✓`}</div>`:''}
     </div>
     ${!d.chaiClub&&((arcStage>=4&&!isPost)||isPledged(d))?`<div class="card"><div class="ctitle">Pledge Details</div>
       <div class="pledge-box">
@@ -1419,13 +1422,14 @@ function attachEvents(){
   const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
   document.getElementById('pledge-amt')?.addEventListener('change',savePledgeAmt);
   document.getElementById('pledge-amt-save')?.addEventListener('click',savePledgeAmt);
-  // Chai Club: monthly amount × 12 becomes the pledge, counted as fully given.
-  const saveChai=()=>{const m=parseFloat(document.getElementById('chai-monthly')?.value)||0;updateDonor(activeDetailId,{chaiClub:true,chaiMonthly:m,pledgeAmount:m*12,pledgePaid:m*12,pledgePlan:'Chai Club',preArcStage:4});render();};
+  // Chai Club: (monthly × 12) + optional additional annual campaign amount = pledge for the year, counted as fully given.
+  const saveChai=()=>{const m=parseFloat(document.getElementById('chai-monthly')?.value)||0;const a=parseFloat(document.getElementById('chai-annual')?.value)||0;const tot=m*12+a;updateDonor(activeDetailId,{chaiClub:true,chaiMonthly:m,chaiAnnual:a,pledgeAmount:tot,pledgePaid:tot,pledgePlan:'Chai Club',preArcStage:4});render();};
   document.getElementById('chai-toggle')?.addEventListener('change',e=>{const d=getDonor(activeDetailId);if(!d)return;
-    if(e.target.checked){const m=d.chaiMonthly||0;updateDonor(activeDetailId,{chaiClub:true,chaiMonthly:m,pledgeAmount:m*12,pledgePaid:m*12,pledgePlan:'Chai Club',preArcStage:Math.max(4,d.preArcStage||0)});}
-    else{const paid=(d.payments||[]).reduce((s,p)=>s+(p.amount||0),0);updateDonor(activeDetailId,{chaiClub:false,chaiMonthly:0,pledgeAmount:0,pledgePaid:paid,pledgePlan:''});}
+    if(e.target.checked){const m=d.chaiMonthly||0;const a=d.chaiAnnual||0;const tot=m*12+a;updateDonor(activeDetailId,{chaiClub:true,chaiMonthly:m,chaiAnnual:a,pledgeAmount:tot,pledgePaid:tot,pledgePlan:'Chai Club',preArcStage:Math.max(4,d.preArcStage||0)});}
+    else{const paid=(d.payments||[]).reduce((s,p)=>s+(p.amount||0),0);updateDonor(activeDetailId,{chaiClub:false,chaiMonthly:0,chaiAnnual:0,pledgeAmount:0,pledgePaid:paid,pledgePlan:''});}
     render();});
   document.getElementById('chai-monthly')?.addEventListener('change',saveChai);
+  document.getElementById('chai-annual')?.addEventListener('change',saveChai);
   document.getElementById('chai-save')?.addEventListener('click',saveChai);
   document.querySelectorAll('[data-payplan]').forEach(b=>b.addEventListener('click',()=>{updateDonor(activeDetailId,{pledgePlan:b.dataset.payplan,pledgePlanNote:''});render();}));
   document.getElementById('pledge-plan-note')?.addEventListener('change',e=>{updateDonor(activeDetailId,{pledgePlanNote:e.target.value});});
