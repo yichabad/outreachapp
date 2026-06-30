@@ -482,6 +482,14 @@ a{color:inherit;}
 .plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
 .plan-committed .plan-note{color:var(--text-3);font-weight:500;}
 .plan-empty{text-align:center;color:var(--text-3);padding:18px 0;}
+/* ── MANAGE CAMPAIGNS ──────────────────────────────────────────── */
+.cm-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.cm-info{min-width:0;flex:1 1 140px;}
+.cm-name{font-weight:700;font-size:14.5px;color:var(--text);}
+.cm-cur{font-size:10px;font-weight:800;color:var(--brand);background:var(--brand-soft);border-radius:var(--r-pill);padding:1px 7px;vertical-align:middle;margin-left:5px;}
+.cm-meta{font-size:12px;color:var(--text-3);margin-top:2px;}
+.cm-acts{display:flex;gap:6px;flex-wrap:wrap;}
+.cm-acts .chip[disabled]{opacity:.4;cursor:default;}
 </style>
 </head>
 <body>
@@ -1247,12 +1255,12 @@ function renderAdmin(){
 function campaignSwitcherHTML(){
   if(!campaigns.length)return '';
   const isAdmin=currentUser&&currentUser.role==='admin';
-  const opts=campaigns.map(c=>`<option value="${c.id}"${c.id===activeCampaignId?' selected':''}>${esc(c.name)}</option>`).join('');
+  const opts=campaigns.filter(c=>!c.archived).map(c=>`<option value="${c.id}"${c.id===activeCampaignId?' selected':''}>${esc(c.name)}</option>`).join('');
   return`<div class="camp-switch">
     <span class="camp-ico">🎯</span>
     <select id="camp-sel" title="Active campaign">${opts}</select>
     <button class="camp-btn" id="camp-new">＋ New</button>
-    ${isAdmin&&campaigns.length>1?`<button class="camp-btn danger" id="camp-del" title="Delete this campaign">🗑</button>`:''}
+    ${isAdmin?`<button class="camp-btn" id="camp-manage" title="Rename, archive or delete campaigns">⚙️</button>`:''}
   </div>`;
 }
 function switchCampaign(id){
@@ -1280,6 +1288,62 @@ function deleteCampaignPrompt(){
       activeCampaignId=(campaigns[0]&&campaigns[0].id)||null;settings.defaultCampaignId=activeCampaignId;markSettings();
       desktopDetailId=null;detailId=null;if(view==='detail')view='list';writeCache();setStatus('saved');render();})
     .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not delete the campaign: '+err.message);});
+}
+function renameCampaignPrompt(id){
+  const c=campaigns.find(x=>x.id===id);if(!c)return;
+  const name=prompt('Rename this campaign:',c.name);
+  if(name===null)return;const nm=name.trim();if(!nm||nm===c.name)return;
+  setStatus('saving');
+  api('/campaigns/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({name:nm})})
+    .then(res=>{campaigns=res.campaigns||campaigns;writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not rename the campaign: '+err.message);});
+}
+function setCampaignArchived(id,archived){
+  setStatus('saving');
+  api('/campaigns/'+encodeURIComponent(id),{method:'PUT',body:JSON.stringify({archived})})
+    .then(res=>{campaigns=res.campaigns||campaigns;
+      if(archived&&activeCampaignId===id){const nxt=campaigns.find(c=>!c.archived);activeCampaignId=nxt?nxt.id:activeCampaignId;settings.defaultCampaignId=activeCampaignId;markSettings();desktopDetailId=null;detailId=null;if(view==='detail')view='list';}
+      writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not update the campaign: '+err.message);});
+}
+function deleteCampaignById(id){
+  const c=campaigns.find(x=>x.id===id);if(!c)return;
+  const n=donors.filter(d=>d.campaignId===id).length;
+  if(!confirm(`Delete the campaign “${c.name}” and permanently remove its ${n} contact${n!==1?'s':''}?\n\nThis cannot be undone. (To keep the records but hide the campaign, Archive it instead.)`))return;
+  setStatus('saving');
+  api('/campaigns/'+encodeURIComponent(id),{method:'DELETE'})
+    .then(res=>{campaigns=res.campaigns||[];donors=donors.filter(d=>d.campaignId!==id);
+      if(activeCampaignId===id){activeCampaignId=(campaigns.find(c=>!c.archived)||campaigns[0]||{}).id||null;settings.defaultCampaignId=activeCampaignId;markSettings();}
+      desktopDetailId=null;detailId=null;if(view==='detail')view='list';writeCache();setStatus('saved');render();})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not delete the campaign: '+err.message);});
+}
+function showManageCampaigns(){
+  const m=document.createElement('div');m.className='overlay';
+  const active=campaigns.filter(c=>!c.archived),archived=campaigns.filter(c=>c.archived);
+  const row=c=>{
+    const n=donors.filter(d=>d.campaignId===c.id).length;const isArch=!!c.archived;
+    return`<div class="cm-row">
+      <div class="cm-info"><div class="cm-name">${esc(c.name)}${c.id===activeCampaignId?' <span class="cm-cur">current</span>':''}</div><div class="cm-meta">${n} contact${n!==1?'s':''}${isArch?' · archived':''}</div></div>
+      <div class="cm-acts">
+        <button class="chip" data-cm-rename="${esc(c.id)}">✏️ Rename</button>
+        ${isArch?`<button class="chip" data-cm-restore="${esc(c.id)}">↩︎ Restore</button>`:`<button class="chip" data-cm-archive="${esc(c.id)}"${active.length<=1?' disabled title="Keep at least one active campaign"':''}>🗄 Archive</button>`}
+        ${campaigns.length>1?`<button class="chip danger-chip" data-cm-del="${esc(c.id)}">🗑 Delete</button>`:''}
+      </div>
+    </div>`;
+  };
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Manage Campaigns</div>
+    <div class="msub">Rename a campaign, archive it (hides it but keeps all its contacts), or delete it permanently.</div>
+    ${active.map(row).join('')}
+    ${archived.length?`<div class="subhd" style="margin:15px 0 7px;">Archived</div>${archived.map(row).join('')}`:''}
+    <div class="mrow" style="margin-top:16px;"><button class="mbtn s" id="cm-close">Done</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('cm-close').onclick=()=>m.remove();
+  m.querySelectorAll('[data-cm-rename]').forEach(b=>b.onclick=()=>{m.remove();renameCampaignPrompt(b.dataset.cmRename);});
+  m.querySelectorAll('[data-cm-archive]').forEach(b=>b.onclick=()=>{m.remove();setCampaignArchived(b.dataset.cmArchive,true);});
+  m.querySelectorAll('[data-cm-restore]').forEach(b=>b.onclick=()=>{m.remove();setCampaignArchived(b.dataset.cmRestore,false);});
+  m.querySelectorAll('[data-cm-del]').forEach(b=>b.onclick=()=>{m.remove();deleteCampaignById(b.dataset.cmDel);});
 }
 // Permanent, irreversible delete (used by the Recycle Bin's "Delete forever").
 function deleteContact(id){
@@ -1427,6 +1491,8 @@ function renderKey(){const isD=window.innerWidth>=900;return view+'|'+(isD?(desk
 const SCROLLERS=['.right-panel','.left-scroll','.page'];
 function render(){
   if(!currentUser){renderLogin();return;}
+  // Never sit on an archived campaign — fall back to the first active one.
+  if(campaigns.length&&!campaigns.some(c=>c.id===activeCampaignId&&!c.archived)){const v=campaigns.find(c=>!c.archived);if(v)activeCampaignId=v.id;}
   const isDesktop=window.innerWidth>=900;
   // Preserve scroll only when re-rendering the same place (not on navigation).
   const samePlace=renderKey()===lastRenderKey;
@@ -1470,7 +1536,7 @@ function attachEvents(){
   document.querySelectorAll('[data-nav]').forEach(b=>b.addEventListener('click',()=>{view=b.dataset.nav;if(!isDesktop&&view!=='detail')detailId=null;if(isDesktop)desktopDetailId=null;render();}));
   document.getElementById('camp-sel')?.addEventListener('change',e=>switchCampaign(e.target.value));
   document.getElementById('camp-new')?.addEventListener('click',createCampaignPrompt);
-  document.getElementById('camp-del')?.addEventListener('click',deleteCampaignPrompt);
+  document.getElementById('camp-manage')?.addEventListener('click',showManageCampaigns);
   document.getElementById('logout-btn')?.addEventListener('click',doLogout);
 
   const fi=document.getElementById('file-inp');

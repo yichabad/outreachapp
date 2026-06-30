@@ -338,6 +338,25 @@ app.post('/api/campaigns', (req, res) => {
   res.json({ campaign, campaigns: db.campaigns });
 });
 
+app.put('/api/campaigns/:id', requireAdmin, (req, res) => {
+  const c = db.campaigns.find((x) => x.id === req.params.id);
+  if (!c) return res.status(404).json({ error: 'Campaign not found.' });
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'A campaign name is required.' });
+    c.name = name;
+  }
+  if (req.body.archived !== undefined) {
+    const archived = !!req.body.archived;
+    if (archived && db.campaigns.filter((x) => !x.archived).length <= 1) {
+      return res.status(400).json({ error: 'Keep at least one active campaign.' });
+    }
+    c.archived = archived;
+  }
+  persist();
+  res.json({ campaign: c, campaigns: db.campaigns });
+});
+
 app.delete('/api/campaigns/:id', requireAdmin, (req, res) => {
   if (db.campaigns.length <= 1) {
     return res.status(400).json({ error: 'You cannot delete the only campaign.' });
