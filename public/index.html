@@ -449,6 +449,34 @@ a{color:inherit;}
 .imp-msg{grid-column:2;font-size:13px;color:var(--text-2);}
 .imp-row.error .imp-msg{color:var(--red);}
 .imp-row.warning .imp-msg{color:var(--amber);}
+/* ── PLAN TAB ──────────────────────────────────────────────────── */
+.plan-goal-card{background:linear-gradient(145deg,var(--hero-1),var(--hero-2));color:#fff;border:none;}
+.plan-goal-lbl{font-size:11.5px;opacity:.8;text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:7px;}
+.plan-goal-row{display:flex;align-items:center;gap:4px;}
+.plan-goal-cur{font-size:28px;font-weight:800;}
+.plan-goal-row input{flex:1;min-width:0;font-size:28px;font-weight:800;letter-spacing:-.5px;background:rgba(255,255,255,.16);border:none;border-radius:var(--r-sm);color:#fff;padding:6px 12px;outline:none;font-variant-numeric:tabular-nums;}
+.plan-goal-row input::placeholder{color:rgba(255,255,255,.6);font-size:18px;font-weight:600;}
+.plan-goal-foot{font-size:12.5px;opacity:.9;margin-top:11px;line-height:1.4;}
+.plan-scn{margin-top:14px;}
+.plan-scn:first-of-type{margin-top:4px;}
+.plan-scn-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+.plan-scn-lbl{font-size:13.5px;font-weight:700;color:var(--text);}
+.plan-scn-amt{font-size:16px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+.plan-scn-bg{background:var(--surface-3);border-radius:var(--r-pill);height:11px;overflow:hidden;}
+.plan-scn-fill{height:11px;border-radius:var(--r-pill);transition:width .5s cubic-bezier(.4,0,.2,1);min-width:2px;}
+.plan-scn-sub{font-size:11.5px;color:var(--text-3);margin-top:4px;font-weight:600;}
+.plan-hint,.plan-goal-set{font-size:12.5px;color:var(--text-3);margin-top:14px;line-height:1.45;background:var(--surface-2);border-radius:var(--r-sm);padding:9px 11px;}
+.plan-warn{font-size:11px;font-weight:700;color:var(--amber);background:var(--amber-soft);border-radius:var(--r-pill);padding:2px 9px;}
+.plan-table-wrap{overflow-x:auto;}
+.plan-table{width:100%;border-collapse:collapse;font-size:13px;}
+.plan-table th{text-align:right;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-3);font-weight:700;padding:4px 6px 8px;border-bottom:1px solid var(--border);}
+.plan-table th:first-child{text-align:left;}
+.plan-table td{padding:5px 6px;border-bottom:1px solid var(--border);}
+.plan-table .plan-name{font-weight:600;color:var(--text);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.plan-table .tval-inp{text-align:right;width:78px;}
+.plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
+.plan-committed .plan-note{color:var(--text-3);font-weight:500;}
+.plan-empty{text-align:center;color:var(--text-3);padding:18px 0;}
 </style>
 </head>
 <body>
@@ -474,7 +502,7 @@ const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
 
 // ── PERSISTENCE / API ─────────────────────────────────────────────
 let APP_BASE=window.APP_BASE||''; if(APP_BASE.indexOf('%')>-1)APP_BASE='';
-function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier'};}
+function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier',campaignGoals:{}};}
 
 function api(path,opts){
   return fetch(APP_BASE+'/api'+path,Object.assign({headers:{'Content-Type':'application/json'},credentials:'same-origin'},opts||{}))
@@ -1087,6 +1115,66 @@ function renderDetail(id){
   </div>`;
 }
 
+// ── RENDER: PLAN ───────────────────────────────────────────────────
+// Projection logic: a CONTRIBUTION = their real commitment once committed (isPledged),
+// else their hoped Low/Med/High. The per-contact hoped numbers are never altered here.
+function planStats(){
+  const D=campaignDonors();
+  let committed=0,lowOut=0,medOut=0,highOut=0,nCommitted=0,nNoTarget=0;
+  D.forEach(d=>{
+    if(isPledged(d)){committed+=(d.pledgeAmount||0);nCommitted++;}
+    else{lowOut+=(d.low||0);medOut+=(d.medium||0);highOut+=(d.high||0);if(!((d.low||0)||(d.medium||0)||(d.high||0)))nNoTarget++;}
+  });
+  const goal=(settings.campaignGoals&&settings.campaignGoals[activeCampaignId])||0;
+  return{total:D.length,nCommitted,nNoTarget,committed,goal,low:committed+lowOut,med:committed+medOut,high:committed+highOut};
+}
+function scenarioBarHTML(key,label,amt,goal,color){
+  const pct=goal>0?Math.round(amt/goal*100):0;
+  return`<div class="plan-scn">
+    <div class="plan-scn-top"><span class="plan-scn-lbl">${label}</span><span class="plan-scn-amt" id="plan-${key}-amt">${fmt(amt)}</span></div>
+    <div class="plan-scn-bg"><div class="plan-scn-fill" id="plan-${key}-bar" style="width:${goal>0?Math.min(100,pct):0}%;background:${color};"></div></div>
+    <div class="plan-scn-sub" id="plan-${key}-pct">${goal>0?pct+'% of goal':'set a goal to see %'}</div>
+  </div>`;
+}
+function updatePlanBars(){
+  const s=planStats();
+  [['low',s.low],['med',s.med],['high',s.high]].forEach(([k,amt])=>{
+    const a=document.getElementById('plan-'+k+'-amt');if(a)a.textContent=fmt(amt);
+    const bar=document.getElementById('plan-'+k+'-bar');const pc=document.getElementById('plan-'+k+'-pct');
+    const pct=s.goal>0?Math.round(amt/s.goal*100):0;
+    if(bar)bar.style.width=(s.goal>0?Math.min(100,pct):0)+'%';
+    if(pc)pc.textContent=s.goal>0?pct+'% of goal':'set a goal to see %';
+  });
+}
+function renderPlan(){
+  const s=planStats();
+  const rows=campaignDonors().slice().sort((a,b)=>(b.high||b.medium||b.low||0)-(a.high||a.medium||a.low||0)).map(d=>{
+    const cells=isPledged(d)
+      ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
+      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></td>`).join('');
+    return`<tr><td class="plan-name">${esc(d.name)}</td>${cells}</tr>`;
+  }).join('');
+  return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Campaign Plan</div><div class="hdr-sub">What your asks add up to vs. your goal</div></div></div></div>
+  <div class="sbody">
+    <div class="card plan-goal-card">
+      <div class="plan-goal-lbl">Campaign Goal</div>
+      <div class="plan-goal-row"><span class="plan-goal-cur">$</span><input id="plan-goal-inp" type="number" inputmode="numeric" value="${s.goal||''}" placeholder="Set your goal…"/></div>
+      ${s.committed>0?`<div class="plan-goal-foot">${fmt(s.committed)} already committed by ${s.nCommitted} ${s.nCommitted===1?'person':'people'} — this counts toward every scenario below.</div>`:''}
+    </div>
+    <div class="card">
+      <div class="ctitle">If everyone gives their…</div>
+      ${scenarioBarHTML('low','🔵 Low',s.low,s.goal,'var(--brand)')}
+      ${scenarioBarHTML('med','🟡 Medium',s.med,s.goal,'var(--amber)')}
+      ${scenarioBarHTML('high','🟢 High',s.high,s.goal,'var(--emer)')}
+      ${s.goal<=0?`<div class="plan-hint">💡 Set a campaign goal above to see how close each scenario gets you.</div>`:''}
+    </div>
+    <div class="card">
+      <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">Your asks ${s.nNoTarget>0?`<span class="plan-warn">${s.nNoTarget} with no target yet</span>`:''}</div>
+      <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Low</th><th>Med</th><th>High</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
+    </div>
+  </div>`;
+}
+
 // ── RENDER: TASKS ──────────────────────────────────────────────────
 function renderTasks(){
   const od=overdueTasks(),td=todayTasks(),up=upcomingTasks().slice(0,25);
@@ -1298,6 +1386,7 @@ function navHTML(){
     {k:'dashboard',icon:'🏠',label:'Home'},
     {k:'list',icon:'👥',label:'Contacts'},
     {k:'tasks',icon:'✅',label:'Tasks',badge:due},
+    {k:'plan',icon:'📊',label:'Plan'},
   ];
   if(currentUser&&currentUser.role==='admin')items.push({k:'admin',icon:'🛡️',label:'Team'});
   items.push({k:'settings',icon:'⚙️',label:'Settings'});
@@ -1329,6 +1418,7 @@ function render(){
   if(view==='dashboard')leftContent=renderDashboard();
   else if(view==='list')leftContent=renderList();
   else if(view==='tasks')leftContent=renderTasks();
+  else if(view==='plan')leftContent=renderPlan();
   else if(view==='settings')leftContent=renderSettings();
   else if(view==='admin')leftContent=renderAdmin();
   else if(view==='detail'&&!isDesktop)leftContent=renderDetail();
@@ -1371,6 +1461,10 @@ function attachEvents(){
   // Dashboard
   document.getElementById('daily-goal-inp')?.addEventListener('change',e=>{settings.dailyGoal=parseInt(e.target.value)||10;markSettings();render();});
   document.getElementById('dash-sort-sel')?.addEventListener('change',e=>{settings.dashSort=e.target.value;markSettings();render();});
+
+  // Plan tab — live updates without re-render so focus/scroll are preserved
+  document.getElementById('plan-goal-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;settings.campaignGoals=settings.campaignGoals||{};settings.campaignGoals[activeCampaignId]=v;markSettings();updatePlanBars();});
+  document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();}));
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
     const id=b.dataset.dashcall;
