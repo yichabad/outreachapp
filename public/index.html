@@ -194,7 +194,7 @@ a{color:inherit;}
 .tval-inp::-webkit-outer-spin-button,.tval-inp::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
 .tval-inp:focus{outline:none;color:var(--brand);border-bottom-color:var(--brand);}
 .r2{display:flex;gap:9px;margin-top:7px;}
-.inp{flex:1;padding:10px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);outline:none;transition:all .15s;}
+.inp{flex:1;min-width:0;padding:10px 12px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);outline:none;transition:all .15s;}
 .inp:focus{border-color:var(--brand);background:var(--surface);box-shadow:0 0 0 3px var(--brand-soft);}
 .greenbox{padding:10px 14px;background:var(--brand-soft);border-radius:var(--r-sm);font-weight:800;color:var(--brand);display:flex;align-items:center;white-space:nowrap;}
 .clink{display:block;color:var(--brand);font-weight:600;text-decoration:none;margin-bottom:2px;padding:6px 0;transition:color .15s;}
@@ -1012,7 +1012,7 @@ function renderDetail(id){
     <div class="card"><div class="ctitle">Donation Targets</div>
       <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Year</div><div class="tval">${fmt(d.actual)}</div></div></div>
       <label class="field-lbl">My Ask Target This Year</label>
-      <div class="r2"><input class="inp" id="target-inp" type="number" value="${d.target||''}" placeholder="Amount…"/><div class="greenbox" id="target-disp">${fmt(d.target)}</div></div>
+      <div class="r2"><input class="inp" id="target-inp" type="number" inputmode="numeric" value="${d.target||''}" placeholder="Amount…" style="flex:0 1 200px;max-width:100%;"/></div>
     </div>
     <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;">Household Contacts <button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></div>
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
@@ -1049,7 +1049,7 @@ function renderDetail(id){
         <div class="pay-plan-grid">${payPlanBtns}</div>
         ${d.pledgePlan==='Specific Date'?`<label class="field-lbl" style="margin-top:9px;">Expected payment date</label><input class="inp" id="pledge-plan-date" type="date" value="${esc(d.pledgePlanNote||'')}" style="width:100%;background:#fff;"/><div style="font-size:11.5px;color:var(--text-3);margin-top:5px;">📌 A follow-up task is added for this date.</div>`:(d.pledgePlan==='Custom'||d.pledgePlan==='Monthly')?`<input class="inp" id="pledge-plan-note" placeholder="${d.pledgePlan==='Monthly'?'e.g. 1st of each month':'Describe plan…'}" value="${esc(d.pledgePlanNote||'')}" style="width:100%;margin-top:9px;background:#fff;"/>`:''}
         <div class="subhd" style="margin:13px 0 5px;">Log a Payment</div>
-        <div style="display:flex;gap:8px;"><input class="inp" id="pay-amount" type="number" placeholder="Amount…" style="flex:1;background:#fff;"/><input class="inp" id="pay-date" type="date" value="${today()}" style="flex:1;background:#fff;"/><button class="savebtn" id="log-pay-btn" style="flex:0;padding:9px 14px;font-size:13px;">Add</button></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;"><input class="inp" id="pay-amount" type="number" placeholder="Amount…" style="flex:1 1 100px;background:#fff;"/><input class="inp" id="pay-date" type="date" value="${today()}" style="flex:1 1 130px;background:#fff;"/><button class="savebtn" id="log-pay-btn" style="flex:0 0 auto;padding:9px 14px;font-size:13px;">Add</button></div>
         ${paymentLog}`:''}
       </div>
     </div>`:''}
@@ -1418,7 +1418,7 @@ function attachEvents(){
   document.getElementById('edit-contacts-btn')?.addEventListener('click',()=>showEditContacts(activeDetailId));
   document.getElementById('edit-fields-btn')?.addEventListener('click',()=>showEditFields(activeDetailId));
 
-  document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});const el=document.getElementById('target-disp');if(el)el.textContent=fmt(v);});
+  document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});});
   document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{[e.target.dataset.tgt]:v});}));
   document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
   const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
