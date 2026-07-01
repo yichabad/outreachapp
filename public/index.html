@@ -740,7 +740,7 @@ function parseDonorRow(row){
     city:str(row['City']),state:str(row['State']),street:str(row['Street']),zip:str(row['Postal Code']),
     notes:str(row['Amb.']),tier,years,
     custom,preArcStage:0,postArcStage:undefined,pledgeAmount:0,pledgePaid:0,pledgePlan:'',pledgePlanNote:'',payments:[],
-    retailTarget:settings.tierDefaults[tier].retail,wholesaleTarget:settings.tierDefaults[tier].wholesale,
+    retailTarget:(settings.tierDefaults[tier]||settings.tierDefaults.general).retail,wholesaleTarget:(settings.tierDefaults[tier]||settings.tierDefaults.general).wholesale,
     interactions:[],tasks:[]};
 }
 
