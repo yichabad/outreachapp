@@ -479,6 +479,8 @@ a{color:inherit;}
 .plan-act{width:36px;text-align:center;}
 .plan-arch{font-size:14px;line-height:1;padding:4px 6px;border-radius:var(--r-sm);opacity:.6;transition:opacity .15s,background .15s;}
 .plan-arch:hover{opacity:1;background:var(--surface-2);}
+.plan-tiercell{white-space:nowrap;}
+.plan-tier{font-size:12px;font-weight:600;padding:4px 6px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);color:var(--text);outline:none;max-width:120px;}
 .plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
 .plan-committed .plan-note{color:var(--text-3);font-weight:500;}
 .plan-empty{text-align:center;color:var(--text-3);padding:18px 0;}
@@ -532,7 +534,7 @@ let currentUser=null, allUsers=[];
 let donors=[], settings=defaultSettings();
 let campaigns=[], activeCampaignId=null;
 let dashState={day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
-let view='dashboard',detailId=null,listTab='courting',planSort='ask';
+let view='dashboard',detailId=null,listTab='courting',planSort='tier';
 let searchVal='',filterVal='All',sortVal='target';
 let bulkMode=false,bulkSel=new Set(),lastBulkIdx=null;
 let logType=INT_TYPES[0],logSpouse='Primary';
@@ -1160,7 +1162,7 @@ function planStats(){
 }
 // Years (e.g. 2025, 2024…) that actually have giving data, newest first — for the Plan sort dropdown.
 function planYears(){const s=new Set();campaignDonors().forEach(d=>Object.keys(d.years||{}).forEach(y=>{if((d.years[y]||0)>0)s.add(y);}));return[...s].sort().reverse();}
-function planSortVal(d){if(planSort==='largest')return d.largestDonation||0;if(planSort==='actual')return d.actual||0;if(planSort.indexOf('yr:')===0)return(d.years&&d.years[planSort.slice(3)])||0;return d.high||d.medium||d.low||0;}
+function planSortVal(d){if(planSort==='tier')return({star:4,major:3,mid:2,general:1})[d.tier]||0;if(planSort==='largest')return d.largestDonation||0;if(planSort==='actual')return d.actual||0;if(planSort.indexOf('yr:')===0)return(d.years&&d.years[planSort.slice(3)])||0;return d.high||d.medium||d.low||0;}
 function scenarioBarHTML(key,label,amt,goal,color){
   const pct=goal>0?Math.round(amt/goal*100):0;
   return`<div class="plan-scn">
@@ -1187,13 +1189,14 @@ function renderPlan(){
   const yrs=planYears();
   const dn=campaignDonors();
   const hasActual=dn.some(d=>(d.actual||0)>0),hasLargest=dn.some(d=>(d.largestDonation||0)>0);
-  const sortOpts=[['ask','Biggest ask (High)'],...(hasActual?[['actual','Most given last year']]:[]),...yrs.map(y=>['yr:'+y,'Most given in '+y]),...(hasLargest?[['largest','Largest gift ever']]:[]),['name','Name (A–Z)']];
+  const sortOpts=[['tier','By tier (Top first)'],['ask','Biggest ask (High)'],...(hasActual?[['actual','Most given last year']]:[]),...yrs.map(y=>['yr:'+y,'Most given in '+y]),...(hasLargest?[['largest','Largest gift ever']]:[]),['name','Name (A–Z)']];
   const rows=sorted.map(d=>{
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
       :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></td>`).join('');
+    const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}">${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
     const arch=canManageContact(d)?`<button class="plan-arch" data-plan-arch="${esc(d.id)}" title="Archive — hides from all lists">🗄</button>`:'';
-    return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td>${cells}<td class="plan-act">${arch}</td></tr>`;
+    return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td><td class="plan-tiercell">${tierSel}</td>${cells}<td class="plan-act">${arch}</td></tr>`;
   }).join('');
   return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Campaign Plan</div><div class="hdr-sub">What your asks add up to vs. your goal</div></div></div></div>
   <div class="sbody">
@@ -1212,8 +1215,8 @@ function renderPlan(){
     <div class="card">
       <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><span style="display:flex;align-items:center;gap:8px;">Your asks ${s.nNoTarget>0?`<span class="plan-warn">${s.nNoTarget} with no target yet</span>`:''}</span>
       <select id="plan-sort" class="ssel" style="flex:0 1 auto;">${sortOpts.map(([v,l])=>`<option value="${v}"${planSort===v?' selected':''}>Sort: ${l}</option>`).join('')}</select></div>
-      <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 10px;">Tap a name to open their details · 🗄 archives someone who won't give (hides them everywhere).</div>
-      <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Low</th><th>Med</th><th>High</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 10px;">Set each person's <b>tier</b> first, then their High / Med / Low. Tap a name to open details · 🗄 archives someone who won't give.</div>
+      <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Tier</th><th>Low</th><th>Med</th><th>High</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
     </div>
   </div>`;
 }
@@ -1567,6 +1570,7 @@ function attachEvents(){
   document.getElementById('plan-goal-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;settings.campaignGoals=settings.campaignGoals||{};settings.campaignGoals[activeCampaignId]=v;markSettings();updatePlanBars();});
   document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();}));
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
+  document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
