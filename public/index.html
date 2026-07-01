@@ -1272,8 +1272,8 @@ function showPullLastYear(){
   const others=campaigns.filter(c=>c.id!==activeCampaignId);
   if(!others.length){alert('There are no other campaigns to pull from yet.');return;}
   const m=document.createElement('div');m.className='overlay';
-  m.innerHTML=`<div class="sheet"><div class="mtitle">Pull "Last Year" from a past campaign</div>
-    <div class="msub">Fills each contact's Last Year with what they pledged in the campaign you pick (matched by Salesforce contact). You can still edit any by hand after.</div>
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Pull last year's annual campaign pledges</div>
+    <div class="msub">Fills each contact's "Last Year" with their <b>annual-campaign pledge</b> from the past campaign you pick (matched by Salesforce contact). Usually a one-time setup — you can still edit any by hand after.</div>
     ${others.map(c=>`<button class="savebtn alt" data-pull-src="${esc(c.id)}" style="text-align:left;margin-bottom:9px;">${esc(c.name)}${c.archived?' (archived)':''}</button>`).join('')}
     <div class="mrow" style="margin-top:8px;"><button class="mbtn s" id="pull-cancel">Cancel</button></div>
   </div>`;
@@ -1281,12 +1281,6 @@ function showPullLastYear(){
   m.addEventListener('click',e=>{if(e.target===m)m.remove();});
   document.getElementById('pull-cancel').onclick=()=>m.remove();
   m.querySelectorAll('[data-pull-src]').forEach(b=>b.onclick=()=>{m.remove();pullLastYearFrom(b.dataset.pullSrc);});
-}
-function clearAllLastYear(){
-  const cur=campaignDonors();
-  if(!confirm(`Clear the "Last Year" amount for all ${cur.length} contact${cur.length!==1?'s':''} in this campaign?\n\n(A backup is saved automatically, and you can re-fill from a past campaign anytime.)`))return;
-  cur.forEach(c=>{if((c.actual||0)!==0)updateDonor(c.id,{actual:0});});
-  render();
 }
 function pullLastYearFrom(srcId){
   const src=campaigns.find(c=>c.id===srcId);if(!src)return;
@@ -1320,7 +1314,6 @@ function renderPlan(){
       <div class="plan-goal-row"><span class="plan-goal-cur">$</span><input id="plan-goal-inp" type="number" inputmode="numeric" value="${s.goal||''}" placeholder="Set your goal…"/></div>
       ${s.committed>0?`<div class="plan-goal-foot">${fmt(s.committed)} already committed by ${s.nCommitted} ${s.nCommitted===1?'person':'people'} — this counts toward every scenario below.</div>`:''}
     </div>
-    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px;"><button class="savebtn alt" id="pull-lastyear-btn" style="flex:1;min-width:180px;">↩ Pull "Last Year" from a past campaign</button><button class="savebtn alt" id="clear-lastyear-btn" style="flex:0 1 auto;">🧹 Clear all "Last Year"</button></div>
     <div class="card">
       <div class="ctitle">If everyone gives their…</div>
       ${scenarioBarHTML('low','🔵 Low',s.low,s.goal,'var(--brand)')}
@@ -1332,6 +1325,7 @@ function renderPlan(){
       <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><span style="display:flex;align-items:center;gap:8px;">Your asks ${s.nNoTarget>0?`<span class="plan-warn">${s.nNoTarget} with no target yet</span>`:''}</span>
       <select id="plan-sort" class="ssel" style="flex:0 1 auto;">${sortOpts.map(([v,l])=>`<option value="${v}"${planSort===v?' selected':''}>Sort: ${l}</option>`).join('')}</select></div>
       <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 8px;">Set each person's <b>tier</b> first, then their High / Med / Low. Tap a name to open details · 🗄 archives someone who won't give.</div>
+      <button class="chip" id="pull-lastyear-btn" style="font-size:11px;margin-bottom:10px;">↩ Pull last year's annual campaign pledges (one-time)</button>
       <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Tier</th><th>Low</th><th>Med</th><th>High</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
     </div>
   </div>`;
@@ -1379,20 +1373,13 @@ function renderSettings(){
   </div>`;
 }
 function resetAllData(){
-  const m=document.createElement('div');m.className='overlay';
-  m.innerHTML=`<div class="sheet"><div class="mtitle" style="color:var(--red);">Delete everything?</div>
-    <div class="msub">This removes <b>all contacts and all campaigns</b> across the whole app and starts you with one empty campaign. A backup is saved first (Settings → Data Backups) so it's recoverable.</div>
-    <div class="mfield"><label class="mlbl">Type <b>DELETE</b> to confirm</label><input class="minp" id="reset-confirm" autocomplete="off" placeholder="DELETE"/></div>
-    <div class="mrow"><button class="mbtn s" id="reset-cancel">Cancel</button><button class="mbtn p" id="reset-go" style="background:var(--red);" disabled>Delete everything</button></div>
-  </div>`;
-  document.body.appendChild(m);
-  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
-  const inp=document.getElementById('reset-confirm'),go=document.getElementById('reset-go');
-  inp.oninput=()=>{go.disabled=inp.value.trim()!=='DELETE';};
-  document.getElementById('reset-cancel').onclick=()=>m.remove();
-  go.onclick=()=>{m.remove();setStatus('saving');
-    api('/reset',{method:'POST'}).then(()=>loadState()).then(()=>{setStatus('saved');desktopDetailId=null;detailId=null;view='dashboard';render();alert('Done — everything was cleared. You have a fresh, empty campaign.');})
-      .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not reset: '+err.message);});};
+  if(!confirm('Delete ALL contacts and ALL campaigns and start fresh?\n\nA backup is saved first (Settings → Data Backups), so this can be restored.'))return;
+  if(!confirm('Last check — this wipes EVERYTHING across every campaign. Continue?'))return;
+  setStatus('saving');
+  api('/reset',{method:'POST'})
+    .then(()=>loadState())
+    .then(()=>{setStatus('saved');desktopDetailId=null;detailId=null;view='dashboard';render();alert('Done — everything was cleared. You now have a fresh, empty campaign.');})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not reset: '+err.message);});
 }
 
 // ── RENDER: ADMIN (TEAM) ───────────────────────────────────────────
@@ -1718,7 +1705,6 @@ function attachEvents(){
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
   document.getElementById('pull-lastyear-btn')?.addEventListener('click',showPullLastYear);
-  document.getElementById('clear-lastyear-btn')?.addEventListener('click',clearAllLastYear);
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
