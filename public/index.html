@@ -492,10 +492,13 @@ a{color:inherit;}
 .plan-table{table-layout:fixed;width:auto;}
 .plan-table th:nth-child(1){width:210px;}
 .plan-table th:nth-child(2){width:132px;}
-.plan-table th:nth-child(3),.plan-table th:nth-child(4),.plan-table th:nth-child(5){width:66px;}
+.plan-table th:nth-child(3),.plan-table th:nth-child(4),.plan-table th:nth-child(5){width:82px;}
 .plan-table th:nth-child(6){width:92px;}
 .plan-table .plan-name{font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .plan-table .tval-inp{text-align:right;width:100%;}
+.plan-tinp[data-plan-tgt="low"]{color:var(--brand);}
+.plan-tinp[data-plan-tgt="medium"]{color:var(--amber);}
+.plan-tinp[data-plan-tgt="high"]{color:var(--emer);}
 .plan-tiercell{white-space:nowrap;}
 .plan-tier{width:100%;max-width:128px;}
 .plan-link{color:var(--brand);cursor:pointer;}
