@@ -62,6 +62,13 @@ function loadDB() {
     });
     db.meta.zeroTargetsCleaned = true;
   }
+  // One-time cleanup: imports used to auto-assign the 'general' tier to everyone.
+  // Clear those so contacts have no tier until one is chosen. Runs once;
+  // deliberate 'general' choices made afterwards are preserved.
+  if (!db.meta.autoTierCleaned) {
+    db.contacts.forEach((c) => { if (c.tier === 'general') delete c.tier; });
+    db.meta.autoTierCleaned = true;
+  }
   if (!db.meta.sessionSecret) {
     db.meta.sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
   }

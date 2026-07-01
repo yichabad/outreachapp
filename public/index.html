@@ -548,6 +548,8 @@ const TIER_CFG={
   mid:{label:'🥈 Mid',bg:'#e7f3fb',color:'#0369a1'},
   general:{label:'🥉 General',bg:'#eef0f4',color:'#64748b'}
 };
+// Shown when a contact has no tier yet (we never auto-assign one).
+const TIER_NONE={label:'No tier',bg:'#eef0f4',color:'#94a3b8'};
 const PRE_ARC=['Not Contacted','Reached Out','Had Conversation','Thinking It Over','Pledged','Donated'];
 const POST_ARC=['Thanked','Report Sent','Personal Touch','Event Invited','Ready for Next Ask'];
 const INT_TYPES=['📞 Call','💬 Text','📧 Email','🤝 Meeting','📮 Voicemail','📝 Other','📄 Report','📰 Newsletter'];
@@ -707,7 +709,7 @@ function parseDonorRow(row){
   const money=(...keys)=>{const n=parseFloat(String(get(...keys)).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;};
   // Boolean column (e.g. Salesforce "Deceased"): undefined if the column is absent/blank.
   const bool=(...keys)=>{const v=str(get(...keys)).toLowerCase();return v===''?undefined:['true','yes','y','1','x','✓','checked'].includes(v);};
-  const tier=TIERS.includes(str(row['Tier']).toLowerCase())?str(row['Tier']).toLowerCase():'general';
+  const tier=TIERS.includes(str(row['Tier']).toLowerCase())?str(row['Tier']).toLowerCase():'';
   // Additional (custom) fields — give the verbose Salesforce columns friendlier names, and make dates readable.
   const CUSTOM_RENAME={'Snapshot: Latest Event Attended (Primary Contact)':'Primary last event','Snapshot: Latest Event Attended Date (Primary Contact)':'Primary last event date','Snapshot: Latest Event Attended (Secondary Contact)':'Secondary last event','Snapshot: Latest Event Attended Date (Secondary Contact)':'Secondary last event date','Primary Contact: Last Activity':'Primary last activity'};
   const CUSTOM_DATE=new Set(['Snapshot: Latest Event Attended Date (Primary Contact)','Snapshot: Latest Event Attended Date (Secondary Contact)','Primary Contact: Last Activity']);
@@ -798,7 +800,7 @@ function applyImport(list){
       p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;
       p.high=p.high||ex.high||0;p.medium=p.medium||ex.medium||0;p.low=p.low||ex.low||0;p.target=ex.target||p.high||0;
       p.actual=p.actual||ex.actual||0;
-      p.tier=(p.tier&&p.tier!=='general')?p.tier:(ex.tier||'general');
+      p.tier=p.tier||ex.tier||'';
       p.notes=p.notes||ex.notes||'';p.pNotes=p.pNotes||ex.pNotes||'';p.sNotes=p.sNotes||ex.sNotes||'';p.askMonthly=p.askMonthly==null?ex.askMonthly:p.askMonthly;p.prevMonthly=p.prevMonthly==null?ex.prevMonthly:p.prevMonthly;p.askNotes=p.askNotes||ex.askNotes||'';
       p.chaiClub=ex.chaiClub;p.chaiMonthly=ex.chaiMonthly;p.chaiAnnual=ex.chaiAnnual;
       p.custom=Object.assign({},ex.custom||{},p.custom||{});}});
@@ -1003,7 +1005,7 @@ function miniBarsHTML(d,pledgedTab){
 }
 
 function donorRowHTML(d,pledgedTab,isSelected){
-  const tc=TIER_CFG[d.tier]||TIER_CFG.general;const last=(d.interactions||[]).slice(-1)[0];
+  const tc=TIER_CFG[d.tier]||TIER_NONE;const last=(d.interactions||[]).slice(-1)[0];
   const hasOD=overdueTasks().some(t=>t.donorId===d.id);const fulfilled=isFulfilled(d);
   const cb=bulkMode?`<div class="dcb${bulkSel.has(d.id)?' on':''}" data-cbid="${d.id}">${bulkSel.has(d.id)?'✓':''}</div>`:'';
   if(bulkMode)return`<div class="drow compact${bulkSel.has(d.id)?' bulk-on':''}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div></div></div>`;
@@ -1069,11 +1071,11 @@ function renderDashboard(){
   const callCards=calls.map(d=>{
     const isDone=dashState.doneCalls.includes(d.id);
     const hasOD=overdueTasks().some(t=>t.donorId===d.id);
-    const tc=TIER_CFG[d.tier]||TIER_CFG.general;
+    const tc=TIER_CFG[d.tier]||TIER_NONE;
     return`<div class="call-card${isDone?' done-card':''}" id="cc-${d.id}" data-cardopen="${d.id}" style="cursor:pointer;">
       <div class="call-info">
         <div class="call-name">${esc(d.name)}</div>
-        <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · ${fmt(d.target)}${hasOD?' · <span style="color:var(--red);">⚠️ overdue task</span>':''}</div>
+        <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · <span class="dt dt-h"><i>H</i>${fmtT(d.high)}</span> <span class="dt dt-m"><i>M</i>${fmtT(d.medium)}</span> <span class="dt dt-l"><i>L</i>${fmtT(d.low)}</span>${hasOD?' · <span style="color:var(--red);">⚠️ overdue task</span>':''}</div>
         ${d.pPhone?`<a class="call-phone" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''}
         ${miniBarsHTML(d,isPledged(d))}
       </div>
@@ -1155,7 +1157,7 @@ function renderList(){
 function renderDetail(id){
   const did=id||detailId;
   const d=getDonor(did);if(!d)return EMPTY_DETAIL;
-  const tc=TIER_CFG[d.tier]||TIER_CFG.general;const isPost=d.postArcStage!==undefined;
+  const tc=TIER_CFG[d.tier]||TIER_NONE;const isPost=d.postArcStage!==undefined;
   const isDesktop=window.innerWidth>=900;
   const arcStage=isPost?99:(d.preArcStage||0);const fulfilled=isFulfilled(d);const pledgePct=d.pledgeAmount>0?Math.min(100,Math.round((d.pledgePaid||0)/d.pledgeAmount*100)):0;
   const ret=(d.interactions||[]).filter(i=>!['📄 Report','📰 Newsletter'].includes(i.type)).length;
@@ -1163,7 +1165,7 @@ function renderDetail(id){
   const rPct=Math.min(100,Math.round(ret/(d.retailTarget||1)*100)),wPct=Math.min(100,Math.round(who/(d.wholesaleTarget||1)*100));
   const typeBtns=INT_TYPES.map(t=>`<button class="chip${logType===t?' on':''}" data-itype="${t}" style="font-size:11px;padding:4px 9px;">${t}</button>`).join('');
   const spouseOpts=[...(!d.pDeceased?['Primary']:[]),...(d.sName&&!d.sDeceased?['Secondary']:[]),...(!d.pDeceased&&d.sName&&!d.sDeceased?['Both']:[])].map(s=>`<option value="${s}" ${logSpouse===s?'selected':''}>${s==='Primary'?esc(d.pName||'Primary'):s==='Secondary'?esc(d.sName||'Secondary'):'Both'}</option>`).join('');
-  const tierBtns=TIERS.map(t=>`<button class="chip${d.tier===t?' on':''}" data-tier="${t}">${TIER_CFG[t].label}</button>`).join('');
+  const tierBtns=`<button class="chip${!d.tier?' on':''}" data-tier="">No tier</button>`+TIERS.map(t=>`<button class="chip${d.tier===t?' on':''}" data-tier="${t}">${TIER_CFG[t].label}</button>`).join('');
   const payPlanBtns=PAY_PLANS.map(p=>`<button class="pay-chip${(d.pledgePlan||'')=== p?' on':''}" data-payplan="${p}">${p}</button>`).join('');
   const openTasks=(d.tasks||[]).filter(t=>!t.done);const doneTasks=(d.tasks||[]).filter(t=>t.done);
   const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:''}</div><button class="tdel" data-tdel="${t.id}">×</button></div>`).join('');
@@ -1340,7 +1342,7 @@ function renderPlan(){
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
       :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
-    const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}">${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
+    const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}"><option value=""${!d.tier?' selected':''}>— Tier —</option>${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
     const arch=canManageContact(d)?`<button class="plan-arch" data-plan-arch="${esc(d.id)}" title="Archive — hides from all lists">🗄 Archive</button>`:'';
     return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td><td class="plan-tiercell">${tierSel}</td>${cells}<td class="plan-act">${arch}</td></tr>`;
   }).join('');
@@ -1840,7 +1842,7 @@ function attachEvents(){
     const amt=parseFloat(document.getElementById('pay-amount')?.value)||0;const date=document.getElementById('pay-date')?.value||today();if(!amt)return;
     const d=getDonor(activeDetailId);if(!d)return;const payments=[...(d.payments||[]),{id:Date.now(),amount:amt,date}];updateDonor(activeDetailId,{payments,pledgePaid:payments.reduce((s,p)=>s+p.amount,0)});render();});
   document.querySelectorAll('[data-delpay]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const payments=(d.payments||[]).filter(p=>p.id!==parseInt(b.dataset.delpay));updateDonor(activeDetailId,{payments,pledgePaid:payments.reduce((s,p)=>s+p.amount,0)});render();}));
-  document.querySelectorAll('[data-tier]').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.tier;const td=settings.tierDefaults[t];updateDonor(activeDetailId,{tier:t,retailTarget:td.retail,wholesaleTarget:td.wholesale});render();}));
+  document.querySelectorAll('[data-tier]').forEach(b=>b.addEventListener('click',()=>{const t=b.dataset.tier;if(!t){updateDonor(activeDetailId,{tier:''});render();return;}const td=settings.tierDefaults[t]||settings.tierDefaults.general;updateDonor(activeDetailId,{tier:t,retailTarget:td.retail,wholesaleTarget:td.wholesale});render();}));
   document.querySelectorAll('[data-adj]').forEach(b=>b.addEventListener('click',()=>{const d=getDonor(activeDetailId);if(!d)return;const f=b.dataset.adj==='retail'?'retailTarget':'wholesaleTarget';const v=Math.max(0,(d[f]||1)+parseInt(b.dataset.dir));updateDonor(activeDetailId,{[f]:v});const el=document.getElementById(b.dataset.adj==='retail'?'ret-disp':'who-disp');if(el)el.textContent=v;}));
   document.querySelectorAll('[data-arc]').forEach(dot=>dot.addEventListener('click',()=>{const d=getDonor(activeDetailId);if(!d)return;const i=parseInt(dot.dataset.arc);if(d.postArcStage!==undefined)updateDonor(activeDetailId,{postArcStage:i});else updateDonor(activeDetailId,{preArcStage:i});render();}));
   document.getElementById('to-post-btn')?.addEventListener('click',()=>{updateDonor(activeDetailId,{postArcStage:0});render();});
@@ -1929,7 +1931,7 @@ function showAddModal(){
     <div class="mfield"><label class="mlbl">Secondary Phone</label><input class="minp" id="asp" type="tel"/></div>
     <div class="mfield"><label class="mlbl">City</label><input class="minp" id="acy"/></div>
     <div class="mfield"><label class="mlbl">Target Amount</label><input class="minp" id="atgt" type="number"/></div>
-    <div class="mfield"><label class="mlbl">Tier</label><select class="msel" id="atier">${TIERS.map(t=>`<option value="${t}">${TIER_CFG[t].label}</option>`).join('')}</select></div>
+    <div class="mfield"><label class="mlbl">Tier</label><select class="msel" id="atier"><option value="" selected>— No tier —</option>${TIERS.map(t=>`<option value="${t}">${TIER_CFG[t].label}</option>`).join('')}</select></div>
     <div class="mrow"><button class="mbtn s" id="add-cancel">Cancel</button><button class="mbtn p" id="add-save">Add</button></div>
   </div>`;
   document.body.appendChild(m);
@@ -1937,7 +1939,7 @@ function showAddModal(){
   document.getElementById('add-cancel').onclick=()=>m.remove();
   document.getElementById('add-save').onclick=()=>{
     const name=document.getElementById('anm').value.trim();if(!name){alert('Name required.');return;}
-    const tier=document.getElementById('atier').value;const td=settings.tierDefaults[tier];
+    const tier=document.getElementById('atier').value;const td=settings.tierDefaults[tier]||settings.tierDefaults.general;
     const c={name,pName:document.getElementById('apn').value.trim(),sName:document.getElementById('asn').value.trim(),pPhone:document.getElementById('aph').value.trim(),sPhone:document.getElementById('asp').value.trim(),pEmail:document.getElementById('ape').value.trim(),sEmail:'',city:document.getElementById('acy').value.trim(),state:'',street:'',zip:'',high:0,medium:0,low:0,actual:0,target:parseFloat(document.getElementById('atgt').value)||0,latestDonation:0,latestDate:'',largestDonation:0,notes:'',tier,years:{},custom:{},preArcStage:0,postArcStage:undefined,pledgeAmount:0,pledgePaid:0,pledgePlan:'',pledgePlanNote:'',payments:[],retailTarget:td.retail,wholesaleTarget:td.wholesale,interactions:[],tasks:[],campaignId:activeCampaignId};
     const btn=document.getElementById('add-save');btn.disabled=true;btn.textContent='Adding…';setStatus('saving');
     api('/contacts',{method:'POST',body:JSON.stringify(c)}).then(res=>{donors.push(res.contact);setStatus('saved');writeCache();m.remove();if(window.innerWidth>=900){desktopDetailId=res.contact.id;view='list';}render();})
