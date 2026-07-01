@@ -449,6 +449,23 @@ a{color:inherit;}
 .imp-msg{grid-column:2;font-size:13px;color:var(--text-2);}
 .imp-row.error .imp-msg{color:var(--red);}
 .imp-row.warning .imp-msg{color:var(--amber);}
+/* ── IMPORT WIZARD ─────────────────────────────────────────────── */
+.imp-map{max-height:38vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);}
+.imp-maprow{display:flex;align-items:center;gap:8px;padding:7px 11px;border-bottom:1px solid var(--border);font-size:13px;}
+.imp-maprow:last-child{border-bottom:none;}
+.imp-col{flex:1;min-width:0;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.imp-arrow{color:var(--text-3);flex-shrink:0;}
+.imp-fld{flex:0 0 auto;font-weight:700;color:var(--brand);text-align:right;}
+.imp-extra{font-size:12.5px;color:var(--text-2);line-height:1.6;background:var(--surface-2);border-radius:var(--r-sm);padding:9px 11px;}
+.iw-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:9px;}
+.iw-list{max-height:42vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--r-sm);}
+.iw-pick{display:flex;align-items:center;gap:10px;padding:8px 11px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px;}
+.iw-pick:last-child{border-bottom:none;}
+.iw-pick input{width:17px;height:17px;flex-shrink:0;accent-color:var(--brand);}
+.iw-nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);}
+.iw-tag{flex-shrink:0;font-size:10px;font-weight:800;padding:2px 8px;border-radius:var(--r-pill);}
+.iw-tag.new{background:var(--emer-soft,#ecfdf5);color:var(--emer);}
+.iw-tag.update{background:var(--brand-soft);color:var(--brand);}
 /* ── PLAN TAB ──────────────────────────────────────────────────── */
 .plan-goal-card{background:linear-gradient(145deg,var(--hero-1),var(--hero-2));color:#fff;border:none;}
 .plan-goal-lbl{font-size:11.5px;opacity:.8;text-transform:uppercase;letter-spacing:.7px;font-weight:600;margin-bottom:7px;}
@@ -714,36 +731,80 @@ function handleFile(file){
       valid.push(parseDonorRow(row));
     });
 
-    const doImport=()=>{
-      // Preserve any existing activity for contacts already in my list.
-      valid.forEach(p=>{p.campaignId=activeCampaignId;
-        // Match ONLY within the active campaign, by Salesforce Contact ID (pId) then name — so an import
-        // can never steal a person's record out of another campaign. New contacts get a campaign-scoped
-        // id so the same person can live independently in multiple campaigns.
-        const ex=campaignDonorsAll().find(d=>(p.pId&&d.pId===p.pId)||(d.name===p.name));
-        if(!ex)p.id=activeCampaignId+'::'+(p.pId||('new_'+Math.random().toString(36).slice(2)));
-        if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
-          p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
-          p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];p.status=ex.status;
-          p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;
-          // App-managed fields: use the file's value when it HAS one, otherwise keep what's already in the app — never blank it.
-          p.high=p.high||ex.high||0;p.medium=p.medium||ex.medium||0;p.low=p.low||ex.low||0;p.target=ex.target||p.high||0;
-          p.tier=(p.tier&&p.tier!=='general')?p.tier:(ex.tier||'general');
-          p.notes=p.notes||ex.notes||'';
-          p.chaiClub=ex.chaiClub;p.chaiMonthly=ex.chaiMonthly;p.chaiAnnual=ex.chaiAnnual;
-          p.custom=Object.assign({},ex.custom||{},p.custom||{});}});
-      setStatus('saving');
-      api('/contacts/bulk',{method:'POST',body:JSON.stringify({contacts:valid})})
-        .then(res=>{donors=res.contacts||donors;setStatus('saved');writeCache();render();
-          alert(`Imported ${res.created} new contact${res.created!==1?'s':''}, updated ${res.updated}${res.skipped?', skipped '+res.skipped+' (no access)':''}.`);})
-        .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Import failed: '+err.message);});
-    };
-
-    if(!valid.length){showImportReport({total:rows.length,valid,issues,onConfirm:null});return;}
-    if(issues.length){showImportReport({total:rows.length,valid,issues,onConfirm:doImport});return;}
-    doImport();
+    if(!valid.length){alert('No rows to import — every contact needs at least a Name.');return;}
+    // Tag each parsed contact as New or Update (matched within the active campaign) for the wizard.
+    const statuses=valid.map(p=>campaignDonorsAll().find(d=>(p.pId&&d.pId===p.pId)||(d.name===p.name))?'update':'new');
+    showImportWizard({headers:Object.keys(rows[0]||{}),valid,issues,statuses});
   };
   r.readAsArrayBuffer(file);
+}
+
+// Applies the merge and sends the chosen contacts to the server. Match is ONLY within the active
+// campaign (by Salesforce Contact ID then name) so an import can't steal a record from another campaign;
+// new contacts get a campaign-scoped id; app-managed fields are filled but never blanked.
+function applyImport(list){
+  list.forEach(p=>{p.campaignId=activeCampaignId;
+    const ex=campaignDonorsAll().find(d=>(p.pId&&d.pId===p.pId)||(d.name===p.name));
+    if(!ex)p.id=activeCampaignId+'::'+(p.pId||('new_'+Math.random().toString(36).slice(2)));
+    if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
+      p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
+      p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];p.status=ex.status;
+      p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;
+      p.high=p.high||ex.high||0;p.medium=p.medium||ex.medium||0;p.low=p.low||ex.low||0;p.target=ex.target||p.high||0;
+      p.tier=(p.tier&&p.tier!=='general')?p.tier:(ex.tier||'general');
+      p.notes=p.notes||ex.notes||'';
+      p.chaiClub=ex.chaiClub;p.chaiMonthly=ex.chaiMonthly;p.chaiAnnual=ex.chaiAnnual;
+      p.custom=Object.assign({},ex.custom||{},p.custom||{});}});
+  setStatus('saving');
+  api('/contacts/bulk',{method:'POST',body:JSON.stringify({contacts:list})})
+    .then(res=>{donors=res.contacts||donors;setStatus('saved');writeCache();render();
+      alert(`Imported ${res.created} new contact${res.created!==1?'s':''}, updated ${res.updated}${res.skipped?', skipped '+res.skipped+' (no access)':''}.`);})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Import failed: '+err.message);});
+}
+
+// Friendly names for how each spreadsheet column maps into the app (shown in the import wizard).
+const IMPORT_FIELD_MAP={'Name':'Household name','Account ID':'Household match key','Household: Account ID':'Household match key','Primary Contact: Name':'Primary name','Secondary Contact: Name':'Secondary name','Primary Contact: Contact ID':'Primary match key','Secondary Contact: Contact ID':'Secondary ID','Primary Contact: Email':'Primary email','Secondary Contact: Email':'Secondary email','Primary Contact: Mobile Phone':'Primary phone','Secondary Contact: Mobile Phone':'Secondary phone','Account Phone':'Home phone','Street':'Street','City':'City','State':'State','Postal Code':'Zip','Snapshot: Latest Donation':'Latest donation','Latest Donation':'Latest donation','Latest Donation ':'Latest donation','Snapshot: Latest Donation Date':'Latest date','Latest Donation Date':'Latest date','Snapshot: Largest Donation':'Largest donation','Largest Donation':'Largest donation','Snapshot: YTD donation summary':'Giving: this year (YTD)','Snapshot: Last Year donation summary':'Giving: last year','Snapshot: 2 Years ago donation summary':'Giving: 2 years ago','Snapshot: 3 Years ago donation summary':'Giving: 3 years ago','Snapshot: 4 Years ago donation summary':'Giving: 4 years ago','High':'Ask: High','Medium':'Ask: Medium','Low':'Ask: Low','Tier':'Tier','Actual':'Last Year','Amb.':'Notes','2021':'Giving 2021','2022':'Giving 2022','2023':'Giving 2023','2024':'Giving 2024','2025':'Giving 2025'};
+
+// Two-step import: (1) preview how columns map, (2) choose who to import.
+function showImportWizard({headers,valid,issues,statuses}){
+  const mapped=[],additional=[];
+  headers.forEach(h=>{if(!h)return;if(IMPORT_FIELD_MAP[h])mapped.push([h,IMPORT_FIELD_MAP[h]]);else additional.push(h);});
+  const sel=valid.map(()=>true);
+  let step=1;
+  const m=document.createElement('div');m.className='overlay';document.body.appendChild(m);
+  const close=()=>m.remove();
+  m.addEventListener('click',e=>{if(e.target===m)close();});
+  function draw(){
+    if(step===1){
+      m.innerHTML=`<div class="sheet"><div class="mtitle">Import · Step 1 of 2 — Check the columns</div>
+        <div class="msub">Here's where each column in your file will go. Anything unrecognized becomes an <b>Additional Field</b> on the contact — nothing is thrown away.</div>
+        <div class="imp-map">${mapped.map(([h,f])=>`<div class="imp-maprow"><span class="imp-col">${esc(h)}</span><span class="imp-arrow">→</span><span class="imp-fld">${esc(f)}</span></div>`).join('')||'<div class="bin-empty">No recognized columns.</div>'}</div>
+        ${additional.length?`<div class="subhd" style="margin:14px 0 6px;">Additional fields (${additional.length})</div><div class="imp-extra">${additional.map(esc).join(' · ')}</div>`:''}
+        <div class="mrow" style="margin-top:16px;"><button class="mbtn s" id="iw-cancel">Cancel</button><button class="mbtn p" id="iw-next">Next: choose who →</button></div>
+      </div>`;
+      m.querySelector('#iw-cancel').onclick=close;
+      m.querySelector('#iw-next').onclick=()=>{step=2;draw();};
+    }else{
+      const total=valid.length,newCt=statuses.filter(s=>s==='new').length,updCt=total-newCt;
+      const rowsHtml=valid.map((p,i)=>`<label class="iw-pick"><input type="checkbox" data-i="${i}" ${sel[i]?'checked':''}/><span class="iw-nm">${esc(p.name)}</span><span class="iw-tag ${statuses[i]}">${statuses[i]==='new'?'New':'Update'}</span></label>`).join('');
+      m.innerHTML=`<div class="sheet"><div class="mtitle">Import · Step 2 of 2 — Choose who</div>
+        <div class="msub">${total} contact${total!==1?'s':''} · <b>${newCt}</b> new · <b>${updCt}</b> updating${issues.length?` · ${issues.length} warning${issues.length!==1?'s':''}`:''}. Uncheck anyone you don't want to import.</div>
+        <div class="iw-tools"><button class="chip" id="iw-all">Select all</button><button class="chip" id="iw-none">Select none</button><input class="inp" id="iw-search" placeholder="Filter by name…" style="flex:1;min-width:120px;"/></div>
+        <div class="iw-list" id="iw-list">${rowsHtml}</div>
+        <div class="mrow" style="margin-top:14px;"><button class="mbtn s" id="iw-back">← Back</button><button class="mbtn p" id="iw-go">Import selected</button></div>
+      </div>`;
+      const listEl=m.querySelector('#iw-list');
+      const updateGo=()=>{m.querySelector('#iw-go').textContent='Import '+sel.filter(Boolean).length+' selected';};
+      listEl.querySelectorAll('input[data-i]').forEach(cb=>cb.onchange=()=>{sel[+cb.dataset.i]=cb.checked;updateGo();});
+      updateGo();
+      m.querySelector('#iw-all').onclick=()=>{valid.forEach((_,i)=>sel[i]=true);listEl.querySelectorAll('input[data-i]').forEach(cb=>cb.checked=true);updateGo();};
+      m.querySelector('#iw-none').onclick=()=>{valid.forEach((_,i)=>sel[i]=false);listEl.querySelectorAll('input[data-i]').forEach(cb=>cb.checked=false);updateGo();};
+      m.querySelector('#iw-search').oninput=e=>{const q=e.target.value.toLowerCase();listEl.querySelectorAll('.iw-pick').forEach(l=>{l.style.display=l.querySelector('.iw-nm').textContent.toLowerCase().includes(q)?'':'none';});};
+      m.querySelector('#iw-back').onclick=()=>{step=1;draw();};
+      m.querySelector('#iw-go').onclick=()=>{const chosen=valid.filter((_,i)=>sel[i]);if(!chosen.length){alert('Nothing selected to import.');return;}close();applyImport(chosen);};
+    }
+  }
+  draw();
 }
 
 // Pre-import review: lists skipped/flagged rows and lets the user import the rest.
