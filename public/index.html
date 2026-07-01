@@ -160,6 +160,12 @@ a{color:inherit;}
 .dlast{font-size:12px;color:var(--text-3);margin-top:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .dright{text-align:right;flex-shrink:0;}
 .damt{font-weight:800;font-size:15px;color:var(--emer);font-variant-numeric:tabular-nums;}
+.dtargets{display:flex;flex-direction:column;align-items:flex-end;gap:1px;line-height:1.2;font-variant-numeric:tabular-nums;}
+.dt{font-size:11.5px;font-weight:800;white-space:nowrap;}
+.dt i{font-style:normal;font-size:8.5px;font-weight:700;color:var(--text-3);margin-right:4px;letter-spacing:.3px;}
+.dt-h{color:var(--emer);}
+.dt-m{color:var(--amber);}
+.dt-l{color:var(--brand);}
 .dwas{font-size:10px;color:var(--faint);margin-top:1px;}
 .mbars{margin-top:8px;}
 .mbar-bg{background:var(--surface-3);border-radius:var(--r-pill);height:4px;margin-bottom:3px;overflow:hidden;}
@@ -636,6 +642,9 @@ function noteRO(label,text){const t=text||'';const long=t.length>160;return `<di
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function today(){return new Date().toISOString().slice(0,10);}
 function fmt(n){return(!n&&n!==0)||n===0?'—':'$'+Number(n).toLocaleString();}
+// Value-aware: a real 0 is a value (shows "$0"); only blank/unset shows "—".
+function hasVal(x){return x!==null&&x!==undefined&&x!=='';}
+function fmtT(x){return hasVal(x)?'$'+Number(x).toLocaleString():'—';}
 function fmtDate(v){if(!v)return'';try{const d=new Date(typeof v==='number'?Math.round((v-25569)*86400000):v+'T12:00:00');return isNaN(d)?String(v):d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}catch{return String(v);}}
 function isPledged(d){return(d.pledgeAmount&&d.pledgeAmount>0)||(d.preArcStage>=4)||d.postArcStage!==undefined;}
 function isFulfilled(d){return d.pledgeAmount>0&&(d.pledgePaid||0)>=d.pledgeAmount;}
@@ -1006,7 +1015,7 @@ function donorRowHTML(d,pledgedTab,isSelected){
     :'<div style="font-size:9.5px;color:var(--text-3);margin-top:4px;">No pledge recorded yet</div>'
     :miniBarsHTML(d,false);
   const rowClass=`drow${(d.interactions||[]).length>0?' touched':''}${hasOD?' overdue':''}${fulfilled?' fulfilled':''}${isSelected?' selected-row':''}`;
-  return`<div class="${rowClass}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div>${last?`<div class="dlast">${last.type}${last.spouse?' ('+esc(last.spouse)+')':''} ${last.date?'· '+fmtDate(last.date):''} — ${esc((last.note||'').slice(0,42))}${(last.note||'').length>42?'…':''}</div>`:''} ${bottomSection}</div><div class="dright"><div class="damt"${pledgedTab&&d.pledgeAmount>0?' style="color:var(--amber);"':''}>${pledgedTab?(d.pledgeAmount>0?fmt(d.pledgeAmount):fmt(d.target)):fmt(d.target)}</div>${!pledgedTab&&d.actual>0?`<div class="dwas">was ${fmt(d.actual)}</div>`:''} ${pledgedTab&&fulfilled?'<div style="font-size:11px;color:var(--emer);margin-top:2px;">✅</div>':''}</div></div>`;
+  return`<div class="${rowClass}" data-id="${d.id}">${cb}<div class="dmain"><div class="dname">${esc(d.name)}</div><div class="dmeta">${esc(d.city)}${d.state?', '+esc(d.state):''} · <span style="color:${tc.color}">${tc.label}</span></div>${last?`<div class="dlast">${last.type}${last.spouse?' ('+esc(last.spouse)+')':''} ${last.date?'· '+fmtDate(last.date):''} — ${esc((last.note||'').slice(0,42))}${(last.note||'').length>42?'…':''}</div>`:''} ${bottomSection}</div><div class="dright">${pledgedTab?`<div class="damt"${d.pledgeAmount>0?' style="color:var(--amber);"':''}>${d.pledgeAmount>0?fmt(d.pledgeAmount):fmt(d.target)}</div>${fulfilled?'<div style="font-size:11px;color:var(--emer);margin-top:2px;">✅</div>':''}`:`<div class="dtargets"><span class="dt dt-h"><i>H</i>${fmtT(d.high)}</span><span class="dt dt-m"><i>M</i>${fmtT(d.medium)}</span><span class="dt dt-l"><i>L</i>${fmtT(d.low)}</span></div>${d.actual>0?`<div class="dwas">was ${fmt(d.actual)}</div>`:''}`}</div></div>`;
 }
 
 function getFiltered(){
@@ -1176,7 +1185,7 @@ function renderDetail(id){
   return`<div class="dhdr">${isDesktop?'':'<button class="backbtn" id="back-btn">←</button>'}<div class="dh-main"><div class="dhtitle">${esc(d.name)}</div><div class="dhsub">${esc(d.city)}${d.state?', '+esc(d.state):''}</div></div>${d.chaiClub?'<span class="chai-badge">♾️ Chai Club</span>':''}<span class="tier-badge" style="background:${tc.bg};color:${tc.color};">${tc.label}</span></div>
   <div class="dbody">
     <div class="card"><div class="ctitle">Ask Amounts</div>
-      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="text" inputmode="numeric" value="${d[k]?Number(d[k]).toLocaleString():''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Yr Campaign Commitment</div><input class="tval-inp" data-tgt="actual" type="text" inputmode="numeric" value="${d.actual?Number(d.actual).toLocaleString():''}" placeholder="—"/></div></div>
+      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Yr Campaign Commitment</div><input class="tval-inp" data-tgt="actual" type="text" inputmode="numeric" value="${d.actual?Number(d.actual).toLocaleString():''}" placeholder="—"/></div></div>
       <label class="field-lbl" style="margin-top:12px;display:flex;align-items:center;gap:8px;">Monthly giving${d.askMonthly!=null?'<span class="ask-reviewed">✓ reviewed</span>':''}</label>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div><div class="mini-lbl">Currently gives</div><input class="inp" id="prevmonthly-inp" type="number" inputmode="numeric" value="${d.prevMonthly==null?'':d.prevMonthly}" placeholder="$/mo" style="width:104px;"/><div id="prevmonthly-yr" class="mini-yr">${d.prevMonthly>0?'= '+fmt(d.prevMonthly*12)+' / yr':''}</div></div>
@@ -1269,7 +1278,7 @@ function planStats(){
   let committed=0,lowOut=0,medOut=0,highOut=0,nCommitted=0,nNoTarget=0;
   D.forEach(d=>{
     if(isPledged(d)){committed+=(d.pledgeAmount||0);nCommitted++;}
-    else{lowOut+=(d.low||0);medOut+=(d.medium||0);highOut+=(d.high||0);if(!((d.low||0)||(d.medium||0)||(d.high||0)))nNoTarget++;}
+    else{lowOut+=(d.low||0);medOut+=(d.medium||0);highOut+=(d.high||0);if(![d.low,d.medium,d.high].some(hasVal))nNoTarget++;}
   });
   const goal=(settings.campaignGoals&&settings.campaignGoals[activeCampaignId])||0;
   return{total:D.length,nCommitted,nNoTarget,committed,goal,low:committed+lowOut,med:committed+medOut,high:committed+highOut};
@@ -1330,7 +1339,7 @@ function renderPlan(){
   const rows=sorted.map(d=>{
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
-      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${d[k]?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
+      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
     const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}">${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
     const arch=canManageContact(d)?`<button class="plan-arch" data-plan-arch="${esc(d.id)}" title="Archive — hides from all lists">🗄 Archive</button>`:'';
     return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td><td class="plan-tiercell">${tierSel}</td>${cells}<td class="plan-act">${arch}</td></tr>`;
@@ -1740,8 +1749,8 @@ function attachEvents(){
   // Plan tab — live updates without re-render so focus/scroll are preserved
   document.getElementById('plan-goal-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;settings.campaignGoals=settings.campaignGoals||{};settings.campaignGoals[activeCampaignId]=v;markSettings();updatePlanBars();});
   document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>{
-    inp.addEventListener('input',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();});
-    inp.addEventListener('change',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;e.target.value=v?v.toLocaleString():'';});
+    inp.addEventListener('input',e=>{const raw=e.target.value.replace(/,/g,'').trim();const v=raw===''?null:(parseFloat(raw)||0);updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();});
+    inp.addEventListener('change',e=>{const raw=e.target.value.replace(/,/g,'').trim();const v=raw===''?null:(parseFloat(raw)||0);e.target.value=hasVal(v)?v.toLocaleString():'';});
   });
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
@@ -1797,8 +1806,8 @@ function attachEvents(){
   document.getElementById('edit-fields-btn')?.addEventListener('click',()=>showEditFields(activeDetailId));
 
   document.querySelectorAll('input[data-tgt]').forEach(inp=>{
-    inp.addEventListener('input',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;const tgt=e.target.dataset.tgt;const ch={[tgt]:v};if(tgt==='high')ch.target=v;updateDonor(activeDetailId,ch);});
-    inp.addEventListener('change',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;e.target.value=v?v.toLocaleString():'';});
+    inp.addEventListener('input',e=>{const raw=e.target.value.replace(/,/g,'').trim();const v=raw===''?null:(parseFloat(raw)||0);const tgt=e.target.dataset.tgt;const ch={[tgt]:v};if(tgt==='high')ch.target=v;updateDonor(activeDetailId,ch);});
+    inp.addEventListener('change',e=>{const raw=e.target.value.replace(/,/g,'').trim();const v=raw===''?null:(parseFloat(raw)||0);e.target.value=hasVal(v)?v.toLocaleString():'';});
   });
   document.getElementById('askmonthly-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;const yr=document.getElementById('askmonthly-yr');if(yr)yr.textContent=v>0?'= '+fmt(v*12)+' / yr':'';});
   document.getElementById('askmonthly-inp')?.addEventListener('change',e=>{const raw=e.target.value.trim();updateDonor(activeDetailId,{askMonthly:raw===''?null:(parseFloat(raw)||0)});render();});
