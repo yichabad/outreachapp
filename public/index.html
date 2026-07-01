@@ -1373,6 +1373,13 @@ function renderTasks(){
 function renderSettings(){
   return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Settings</div><div class="hdr-sub">Your personal preferences</div></div></div></div>
   <div class="sbody">
+    <div class="shead">Your Account</div>
+    <div class="card">
+      <div class="ctitle">🔑 Password &amp; recovery</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin:2px 0 12px;line-height:1.5;">Change your password, and set a security question so you can reset it yourself if you ever get locked out.</div>
+      <button class="savebtn alt" onclick="showChangePasswordModal()">Change my password</button>
+      <button class="savebtn alt" style="margin-top:9px;" onclick="showSecurityModal()">${currentUser&&currentUser.hasSecurityQuestion?'Update security question ✓':'⚠️ Set up security question'}</button>
+    </div>
     <div class="shead">Default Touchpoints by Tier</div>
     <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Applies to newly imported donors. Override per donor.</p>
     ${TIERS.map(t=>`<div class="card"><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">${TIER_CFG[t].label}</div>
@@ -2030,6 +2037,55 @@ function showUserModal(userId){
 
 function refreshUsers(){return api('/users').then(r=>{allUsers=r.users;});}
 
+// ── ACCOUNT: change own password / set security question ────────────
+function showChangePasswordModal(){
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Change Password</div><div class="msub">Update your sign-in password</div>
+    <div class="mfield"><label class="mlbl">Current password</label><input class="minp" id="cp-cur" type="password" autocomplete="current-password"/></div>
+    <div class="mfield"><label class="mlbl">New password</label><input class="minp" id="cp-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"/></div>
+    <div class="mfield"><label class="mlbl">Confirm new password</label><input class="minp" id="cp-conf" type="password" autocomplete="new-password"/></div>
+    <div class="mrow"><button class="mbtn s" id="cp-cancel">Cancel</button><button class="mbtn p" id="cp-save">Save</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('cp-cancel').onclick=()=>m.remove();
+  document.getElementById('cp-save').onclick=()=>{
+    const cur=document.getElementById('cp-cur').value,nw=document.getElementById('cp-new').value,cf=document.getElementById('cp-conf').value;
+    if(nw.length<8){alert('New password must be at least 8 characters.');return;}
+    if(nw!==cf){alert('The new passwords don’t match.');return;}
+    const btn=document.getElementById('cp-save');btn.disabled=true;btn.textContent='Saving…';
+    api('/me/password',{method:'PUT',body:JSON.stringify({currentPassword:cur,newPassword:nw})})
+      .then(()=>{m.remove();alert('Your password has been changed.');})
+      .catch(err=>{if(err.code===401)return;btn.disabled=false;btn.textContent='Save';alert(err.message);});
+  };
+}
+const SECURITY_QUESTIONS=['What was the name of your first pet?','What city were you born in?','What was the name of your elementary school?','What is your mother’s maiden name?','What was the make/model of your first car?','What is your favorite book?'];
+function showSecurityModal(){
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Security Question</div><div class="msub">Used to verify it’s you if you forget your password</div>
+    <div class="mfield"><label class="mlbl">Question</label><select class="msel" id="sq-sel">${SECURITY_QUESTIONS.map(q=>`<option value="${esc(q)}">${esc(q)}</option>`).join('')}<option value="__custom">Write my own…</option></select></div>
+    <div class="mfield" id="sq-custom-wrap" style="display:none;"><label class="mlbl">Your question</label><input class="minp" id="sq-custom"/></div>
+    <div class="mfield"><label class="mlbl">Answer</label><input class="minp" id="sq-ans" autocomplete="off" placeholder="Not case-sensitive"/></div>
+    <div class="mfield"><label class="mlbl">Confirm your current password</label><input class="minp" id="sq-pw" type="password" autocomplete="current-password"/></div>
+    <div class="mrow"><button class="mbtn s" id="sq-cancel">Cancel</button><button class="mbtn p" id="sq-save">Save</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  const sel=document.getElementById('sq-sel');
+  sel.onchange=()=>{document.getElementById('sq-custom-wrap').style.display=sel.value==='__custom'?'block':'none';};
+  document.getElementById('sq-cancel').onclick=()=>m.remove();
+  document.getElementById('sq-save').onclick=()=>{
+    const q=sel.value==='__custom'?document.getElementById('sq-custom').value.trim():sel.value;
+    const ans=document.getElementById('sq-ans').value,pw=document.getElementById('sq-pw').value;
+    if(!q){alert('Please enter a question.');return;}
+    if(ans.trim().length<2){alert('Please enter a longer answer.');return;}
+    const btn=document.getElementById('sq-save');btn.disabled=true;btn.textContent='Saving…';
+    api('/me/security',{method:'PUT',body:JSON.stringify({question:q,answer:ans,currentPassword:pw})})
+      .then(r=>{if(r.user)currentUser=r.user;m.remove();render();alert('Your security question has been saved.');})
+      .catch(err=>{if(err.code===401)return;btn.disabled=false;btn.textContent='Save';alert(err.message);});
+  };
+}
+
 // ── AUTH FLOW ──────────────────────────────────────────────────────
 function renderLogin(err){
   const app=document.getElementById('app');if(!app)return;
@@ -2041,8 +2097,10 @@ function renderLogin(err){
     <label class="login-lbl">Email</label><input class="login-inp" id="login-email" type="email" autocomplete="username" autocapitalize="none" required/>
     <label class="login-lbl">Password</label><input class="login-inp" id="login-pass" type="password" autocomplete="current-password" required/>
     <button class="login-btn" type="submit">Sign in</button>
+    <div style="text-align:center;margin-top:15px;"><a href="#" id="forgot-link" style="color:var(--brand);font-size:13px;text-decoration:none;">Forgot password?</a></div>
   </form></div>`;
   const f=document.getElementById('login-form');
+  document.getElementById('forgot-link').onclick=e=>{e.preventDefault();renderForgot();};
   f.addEventListener('submit',async ev=>{
     ev.preventDefault();
     const email=document.getElementById('login-email').value.trim();
@@ -2059,6 +2117,96 @@ function renderLogin(err){
 
 function doLogout(){
   api('/logout',{method:'POST'}).catch(()=>{}).then(()=>{currentUser=null;donors=[];allUsers=[];renderLogin();});
+}
+
+// ── FORGOT PASSWORD (public) ───────────────────────────────────────
+function renderForgot(){
+  const app=document.getElementById('app');if(!app)return;
+  app.innerHTML=`<div class="login-wrap"><div class="login-card">
+    <div class="login-logo">OT</div>
+    <div class="login-title">Reset password</div>
+    <div class="login-sub" id="fg-sub">Enter your email to begin</div>
+    <div class="login-err" id="fg-err" style="display:none;"></div>
+    <div id="fg-step1">
+      <label class="login-lbl">Email</label><input class="login-inp" id="fg-email" type="email" autocomplete="username" autocapitalize="none"/>
+      <button class="login-btn" id="fg-continue">Continue</button>
+    </div>
+    <div id="fg-step2" style="display:none;">
+      <label class="login-lbl" id="fg-q"></label><input class="login-inp" id="fg-ans" autocomplete="off"/>
+      <button class="login-btn" id="fg-send">Send reset link</button>
+    </div>
+    <div id="fg-done" style="display:none;font-size:14px;color:var(--text-2);line-height:1.6;text-align:center;"></div>
+    <div style="text-align:center;margin-top:16px;"><a href="#" id="fg-back" style="color:var(--brand);font-size:13px;text-decoration:none;">← Back to sign in</a></div>
+  </div></div>`;
+  const showErr=t=>{const e=document.getElementById('fg-err');e.style.display='block';e.textContent=t;};
+  document.getElementById('fg-back').onclick=e=>{e.preventDefault();renderLogin();};
+  document.getElementById('fg-continue').onclick=()=>{
+    const email=document.getElementById('fg-email').value.trim();
+    if(!email){showErr('Please enter your email.');return;}
+    const btn=document.getElementById('fg-continue');btn.disabled=true;btn.textContent='Checking…';
+    api('/forgot',{method:'POST',body:JSON.stringify({email})}).then(r=>{
+      if(r.hasQuestion){
+        window._fgEmail=email;
+        document.getElementById('fg-err').style.display='none';
+        document.getElementById('fg-step1').style.display='none';
+        document.getElementById('fg-step2').style.display='block';
+        document.getElementById('fg-sub').textContent='Answer your security question';
+        document.getElementById('fg-q').textContent=r.question;
+        document.getElementById('fg-ans').focus();
+      }else{
+        btn.disabled=false;btn.textContent='Continue';
+        showErr('This account can’t be reset automatically (no security question is set). Please ask an administrator to reset your password.');
+      }
+    }).catch(err=>{btn.disabled=false;btn.textContent='Continue';showErr(err.message||'Something went wrong.');});
+  };
+  document.getElementById('fg-send').onclick=()=>{
+    const answer=document.getElementById('fg-ans').value;
+    if(!answer.trim()){showErr('Please enter your answer.');return;}
+    const btn=document.getElementById('fg-send');btn.disabled=true;btn.textContent='Sending…';
+    api('/forgot/answer',{method:'POST',body:JSON.stringify({email:window._fgEmail,answer})}).then(r=>{
+      document.getElementById('fg-step2').style.display='none';
+      document.getElementById('fg-err').style.display='none';
+      document.getElementById('fg-sub').textContent='Check your email';
+      const d=document.getElementById('fg-done');d.style.display='block';
+      d.innerHTML='✅ We sent a reset link to <b>'+esc(r.emailHint||'your email')+'</b>.<br><br>Open that email and click the link to choose a new password. The link works for 45 minutes.';
+    }).catch(err=>{btn.disabled=false;btn.textContent='Send reset link';showErr(err.message||'That didn’t work.');});
+  };
+}
+
+// ── RESET PASSWORD PAGE (from the emailed link) ────────────────────
+function isResetPage(){
+  try{const u=new URL(location.href);return u.pathname.replace(/\/+$/,'').endsWith('/reset')&&!!u.searchParams.get('token');}catch{return false;}
+}
+function renderReset(){
+  const app=document.getElementById('app');if(!app)return;
+  const token=new URL(location.href).searchParams.get('token');
+  const home=APP_BASE||'/';
+  app.innerHTML=`<div class="login-wrap"><div class="login-card">
+    <div class="login-logo">OT</div>
+    <div class="login-title">Choose a new password</div>
+    <div class="login-sub">Set a new password for your account</div>
+    <div class="login-err" id="rs-err" style="display:none;"></div>
+    <div id="rs-form">
+      <label class="login-lbl">New password</label><input class="login-inp" id="rs-new" type="password" autocomplete="new-password" placeholder="At least 8 characters"/>
+      <label class="login-lbl">Confirm password</label><input class="login-inp" id="rs-conf" type="password" autocomplete="new-password"/>
+      <button class="login-btn" id="rs-save">Set new password</button>
+    </div>
+    <div id="rs-done" style="display:none;text-align:center;font-size:14px;color:var(--text-2);line-height:1.6;"></div>
+    <div style="text-align:center;margin-top:16px;"><a href="${esc(home)}" style="color:var(--brand);font-size:13px;text-decoration:none;">← Back to sign in</a></div>
+  </div></div>`;
+  const showErr=t=>{const e=document.getElementById('rs-err');e.style.display='block';e.textContent=t;};
+  document.getElementById('rs-save').onclick=()=>{
+    const nw=document.getElementById('rs-new').value,cf=document.getElementById('rs-conf').value;
+    if(nw.length<8){showErr('Password must be at least 8 characters.');return;}
+    if(nw!==cf){showErr('The passwords don’t match.');return;}
+    const btn=document.getElementById('rs-save');btn.disabled=true;btn.textContent='Saving…';
+    api('/reset-password',{method:'POST',body:JSON.stringify({token,password:nw})}).then(()=>{
+      document.getElementById('rs-form').style.display='none';
+      document.getElementById('rs-err').style.display='none';
+      const d=document.getElementById('rs-done');d.style.display='block';
+      d.innerHTML='✅ Your password has been reset.<br><br><a class="login-btn" style="display:inline-block;text-decoration:none;text-align:center;box-sizing:border-box;" href="'+esc(home)+'">Sign in</a>';
+    }).catch(err=>{btn.disabled=false;btn.textContent='Set new password';showErr(err.message||'Could not reset password.');});
+  };
 }
 
 async function loadState(){
@@ -2118,7 +2266,7 @@ window.addEventListener('resize',()=>{
   const nowDesktop=window.innerWidth>=900;
   if(nowDesktop!==wasDesktopLayout){wasDesktopLayout=nowDesktop;if(currentUser)render();}
 });
-boot();
+if(isResetPage()){renderReset();}else{boot();}
 </script>
 </body>
 </html>

@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const nodemailer = require('nodemailer');
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -45,6 +46,7 @@ function loadDB() {
   db.dashByUser = db.dashByUser || {};
   db.campaigns = db.campaigns || [];
   db.meta = db.meta || {};
+  db.meta.resetTokens = db.meta.resetTokens || [];
   // Ensure at least one campaign exists, and that every contact belongs to one.
   if (db.campaigns.length === 0) {
     db.campaigns.push({ id: newId('camp'), name: 'Beta — test data', createdAt: Date.now() });
@@ -130,9 +132,71 @@ function verifyToken(token) {
   return userId;
 }
 function safeUser(u) {
-  return { id: u.id, email: u.email, name: u.name, role: u.role };
+  return { id: u.id, email: u.email, name: u.name, role: u.role, hasSecurityQuestion: !!u.securityQuestion };
 }
 function userById(id) { return db.users.find((u) => u.id === id); }
+
+// ── PASSWORD-RESET / EMAIL HELPERS ─────────────────────────────────────────
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Security answers are compared case/space-insensitively.
+function normAnswer(a) { return String(a || '').trim().toLowerCase().replace(/\s+/g, ' '); }
+function hashToken(t) { return crypto.createHash('sha256').update(String(t)).digest('hex'); }
+function maskEmail(email) {
+  const [u, d] = String(email || '').split('@');
+  if (!d) return email;
+  const shown = u.length <= 2 ? (u[0] || '') : u.slice(0, 2);
+  return shown + '***@' + d;
+}
+function publicBaseUrl(req) {
+  if (process.env.PUBLIC_URL) return process.env.PUBLIC_URL.replace(/\/+$/, '');
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0] || (req.secure ? 'https' : 'http');
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return proto + '://' + host + BASE_PATH;
+}
+
+// SMTP mailer (optional). If SMTP_USER/SMTP_PASS aren't set, sending throws and
+// the caller reports a friendly error; the reset link is always logged too.
+let _mailer = null, _mailerTried = false;
+function getMailer() {
+  if (_mailerTried) return _mailer;
+  _mailerTried = true;
+  const user = process.env.SMTP_USER, pass = process.env.SMTP_PASS;
+  if (!user || !pass) { console.warn('[outreach] SMTP not configured — reset emails disabled.'); return null; }
+  const port = parseInt(process.env.SMTP_PORT, 10) || 465;
+  _mailer = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port, secure: port === 465, auth: { user, pass },
+  });
+  return _mailer;
+}
+async function sendMail(to, subject, text, html) {
+  const m = getMailer();
+  if (!m) throw new Error('email-not-configured');
+  const from = process.env.SMTP_FROM || ('Outreach Tracker <' + process.env.SMTP_USER + '>');
+  await m.sendMail({ from, to, subject, text, html });
+}
+
+// In-memory throttle for reset-answer attempts (per email).
+const resetAttempts = new Map();
+function tooManyAttempts(email) {
+  const r = resetAttempts.get(email);
+  if (!r) return false;
+  if (Date.now() > r.until) { resetAttempts.delete(email); return false; }
+  return r.count >= 6;
+}
+function noteAttempt(email) {
+  const r = resetAttempts.get(email) || { count: 0, until: 0 };
+  r.count++; r.until = Date.now() + 15 * 60 * 1000;
+  resetAttempts.set(email, r);
+}
+function clearAttempts(email) { resetAttempts.delete(email); }
+const RESET_TTL_MS = 45 * 60 * 1000;
+function pruneResetTokens() {
+  db.meta.resetTokens = (db.meta.resetTokens || []).filter((t) => !t.used && t.exp > Date.now());
+}
 
 function canSee(user, contact) {
   return user.role === 'admin'
@@ -214,6 +278,77 @@ app.get('/api/me', (req, res) => {
   const user = userId && userById(userId);
   if (!user) return res.status(401).json({ error: 'not authenticated' });
   res.json({ user: safeUser(user) });
+});
+
+// ── PASSWORD RESET (public: no session required) ───────────────────────────
+// Step 1: look up the account's security question (if any).
+app.post('/api/forgot', (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const user = db.users.find((u) => u.email === email);
+  if (user && user.securityQuestion) {
+    return res.json({ ok: true, hasQuestion: true, question: user.securityQuestion });
+  }
+  // Don't confirm or deny the account beyond whether a self-reset is possible.
+  res.json({ ok: true, hasQuestion: false });
+});
+
+// Step 2: verify the security answer, then email a one-time reset link.
+app.post('/api/forgot/answer', async (req, res) => {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  const user = db.users.find((u) => u.email === email);
+  if (!user || !user.securityQuestion || !user.secHash) {
+    return res.status(400).json({ error: 'This account can’t be reset automatically. Please ask an administrator.' });
+  }
+  if (tooManyAttempts(email)) {
+    return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes and try again.' });
+  }
+  if (!verifyPassword(normAnswer(req.body.answer), user.secSalt, user.secHash)) {
+    noteAttempt(email);
+    return res.status(400).json({ error: 'That answer is incorrect.' });
+  }
+  clearAttempts(email);
+  pruneResetTokens();
+  const raw = crypto.randomBytes(32).toString('hex');
+  db.meta.resetTokens.push({ tokenHash: hashToken(raw), userId: user.id, exp: Date.now() + RESET_TTL_MS, used: false });
+  persist();
+  const link = publicBaseUrl(req) + '/reset?token=' + raw;
+  console.log('[outreach] password reset link for ' + email + ': ' + link);
+  try {
+    await sendMail(
+      user.email,
+      'Reset your Outreach Tracker password',
+      'Hello ' + (user.name || '') + ',\n\n' +
+        'We received a request to reset your Outreach Tracker password.\n\n' +
+        'Open this link to choose a new password (valid for 45 minutes):\n' + link + '\n\n' +
+        'If you didn’t request this, you can safely ignore this email.\n',
+      '<p>Hello ' + escHtml(user.name || '') + ',</p>' +
+        '<p>We received a request to reset your Outreach Tracker password.</p>' +
+        '<p><a href="' + link + '">Click here to choose a new password</a> (valid for 45 minutes).</p>' +
+        '<p>If you didn’t request this, you can safely ignore this email.</p>'
+    );
+    res.json({ ok: true, sent: true, emailHint: maskEmail(user.email) });
+  } catch (e) {
+    console.error('[outreach] reset email failed:', e.message);
+    res.status(500).json({ error: 'We couldn’t send the reset email. Please contact your administrator.' });
+  }
+});
+
+// Step 3: consume the token and set the new password.
+app.post('/api/reset-password', (req, res) => {
+  const token = String(req.body.token || '');
+  const password = String(req.body.password || '');
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  pruneResetTokens();
+  const rec = db.meta.resetTokens.find((t) => t.tokenHash === hashToken(token) && !t.used && t.exp > Date.now());
+  if (!rec) return res.status(400).json({ error: 'This reset link is invalid or has expired. Please request a new one.' });
+  const user = userById(rec.userId);
+  if (!user) return res.status(400).json({ error: 'Account not found.' });
+  const pw = makePasswordRecord(password);
+  user.salt = pw.salt; user.hash = pw.hash;
+  rec.used = true;
+  pruneResetTokens();
+  persist();
+  res.json({ ok: true });
 });
 
 // Everything below requires a session.
@@ -446,6 +581,34 @@ app.put('/api/dash', (req, res) => {
   db.dashByUser[req.user.id] = req.body || {};
   persist();
   res.json({ ok: true });
+});
+
+// ── ACCOUNT: self-service password + security question ──────────────────────
+app.put('/api/me/password', (req, res) => {
+  const cur = String(req.body.currentPassword || '');
+  const next = String(req.body.newPassword || '');
+  if (!verifyPassword(cur, req.user.salt, req.user.hash)) {
+    return res.status(400).json({ error: 'Your current password is incorrect.' });
+  }
+  if (next.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  const pw = makePasswordRecord(next);
+  req.user.salt = pw.salt; req.user.hash = pw.hash;
+  persist();
+  res.json({ ok: true });
+});
+
+app.put('/api/me/security', (req, res) => {
+  const cur = String(req.body.currentPassword || '');
+  const question = String(req.body.question || '').trim();
+  if (!verifyPassword(cur, req.user.salt, req.user.hash)) {
+    return res.status(400).json({ error: 'Your current password is incorrect.' });
+  }
+  if (!question) return res.status(400).json({ error: 'Please enter a security question.' });
+  if (normAnswer(req.body.answer).length < 2) return res.status(400).json({ error: 'Please enter a longer answer.' });
+  const rec = makePasswordRecord(normAnswer(req.body.answer));
+  req.user.securityQuestion = question; req.user.secSalt = rec.salt; req.user.secHash = rec.hash;
+  persist();
+  res.json({ ok: true, user: safeUser(req.user) });
 });
 
 // ── ADMIN: USER MANAGEMENT ────────────────────────────────────────────────────
