@@ -47,6 +47,7 @@ function loadDB() {
   db.campaigns = db.campaigns || [];
   db.meta = db.meta || {};
   db.meta.resetTokens = db.meta.resetTokens || [];
+  db.syncLog = db.syncLog || [];
   // Ensure at least one campaign exists, and that every contact belongs to one.
   if (db.campaigns.length === 0) {
     db.campaigns.push({ id: newId('camp'), name: 'Beta — test data', createdAt: Date.now() });
@@ -765,6 +766,120 @@ app.post('/api/sf/test', requireAdmin, async (req, res) => {
   }
 });
 
+// ── SALESFORCE ↔ APP CONTACT SYNC (Name / Mobile / Email / Personal notes) ──
+const SF_CONTACT_QUERY_FIELDS = 'Id,FirstName,LastName,Email,MobilePhone,OneCRM__Personal_Notes__c';
+function splitName(full) {
+  const t = String(full || '').trim().replace(/\s+/g, ' ');
+  if (!t) return { FirstName: '', LastName: '' };
+  const i = t.indexOf(' ');
+  if (i < 0) return { FirstName: '', LastName: t }; // one word → LastName (SF requires LastName)
+  return { FirstName: t.slice(0, i), LastName: t.slice(i + 1) };
+}
+function joinName(first, last) { return (String(first || '').trim() + ' ' + String(last || '').trim()).trim(); }
+function digitsOnly(s) { return String(s == null ? '' : s).replace(/\D/g, ''); }
+function logSync(entry) {
+  db.syncLog.push(Object.assign({ id: newId('log'), at: Date.now() }, entry));
+  if (db.syncLog.length > 10000) db.syncLog.splice(0, db.syncLog.length - 10000);
+}
+// App person prefix 'p' (primary) / 's' (secondary) → field names + label.
+function personDef(pre) {
+  return {
+    id: pre + 'Id', name: pre + 'Name', email: pre + 'Email', phone: pre + 'Phone', notes: pre + 'Notes',
+    label: pre === 'p' ? 'Primary' : 'Secondary',
+  };
+}
+// Pull Salesforce → app for the given contacts. Returns number of field changes.
+async function sfPullContacts(contacts) {
+  if (!(db.meta.salesforce && db.meta.salesforce.refreshToken)) throw new Error('Salesforce not connected');
+  const version = await sfApiVersion();
+  const ids = [];
+  contacts.forEach((c) => { ['p', 's'].forEach((pre) => { if (c[pre + 'Id']) ids.push(c[pre + 'Id']); }); });
+  const byId = {};
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200).map((id) => "'" + id + "'").join(',');
+    const r = await sfApi('/services/data/v' + version + '/query/?q=' + encodeURIComponent('SELECT ' + SF_CONTACT_QUERY_FIELDS + ' FROM Contact WHERE Id IN (' + chunk + ')'));
+    (r.records || []).forEach((rec) => { byId[rec.Id] = rec; });
+  }
+  let changes = 0;
+  contacts.forEach((c) => {
+    ['p', 's'].forEach((pre) => {
+      const def = personDef(pre); const sfId = c[def.id]; if (!sfId) return;
+      const rec = byId[sfId]; if (!rec) return;
+      const apply = (appField, newVal, label, cmp) => {
+        const oldVal = c[appField] || '';
+        const nv = newVal == null ? '' : String(newVal);
+        const same = cmp ? cmp(oldVal, nv) : (String(oldVal).trim() === nv.trim());
+        if (same) return;
+        logSync({ direction: 'sf→app', contactId: c.id, contactName: c.name, person: def.label, personId: sfId, field: label, old: oldVal, new: nv, by: 'Salesforce sync' });
+        c[appField] = nv; changes++;
+      };
+      apply(def.name, joinName(rec.FirstName, rec.LastName), 'Name');
+      apply(def.email, rec.Email, 'Email');
+      apply(def.phone, rec.MobilePhone, 'Mobile', (a, b) => digitsOnly(a) === digitsOnly(b));
+      apply(def.notes, rec.OneCRM__Personal_Notes__c, 'Personal notes');
+    });
+  });
+  db.meta.sfLastPullAt = Date.now();
+  persist();
+  return changes;
+}
+
+// Push app → Salesforce for the fields the user just edited on one contact.
+app.post('/api/sf/push-contact', async (req, res) => {
+  try {
+    if (!(db.meta.salesforce && db.meta.salesforce.refreshToken)) throw new Error('Salesforce not connected');
+    const c = db.contacts.find((x) => x.id === req.body.contactId);
+    if (!c) return res.status(404).json({ error: 'contact not found' });
+    if (!canSee(req.user, c)) return res.status(403).json({ error: 'no access' });
+    const version = await sfApiVersion();
+    const changes = Array.isArray(req.body.changes) ? req.body.changes : [];
+    const byPerson = {};
+    changes.forEach((ch) => { (byPerson[ch.person] = byPerson[ch.person] || []).push(ch); });
+    const results = [];
+    for (const pre of Object.keys(byPerson)) {
+      const def = personDef(pre); const sfId = c[def.id];
+      if (!sfId) { results.push({ person: pre, skipped: 'no Salesforce id' }); continue; }
+      const patch = {};
+      byPerson[pre].forEach((ch) => {
+        if (ch.field === 'Name') { const n = splitName(ch.new); patch.FirstName = n.FirstName; patch.LastName = n.LastName; }
+        else if (ch.field === 'Email') patch.Email = ch.new || null;
+        else if (ch.field === 'Mobile') patch.MobilePhone = ch.new || null;
+        else if (ch.field === 'Personal notes') patch.OneCRM__Personal_Notes__c = ch.new || null;
+      });
+      if (!Object.keys(patch).length) continue;
+      await sfApi('/services/data/v' + version + '/sobjects/Contact/' + sfId, { method: 'PATCH', body: JSON.stringify(patch) });
+      byPerson[pre].forEach((ch) => logSync({ direction: 'app→sf', contactId: c.id, contactName: c.name, person: def.label, personId: sfId, field: ch.field, old: ch.old || '', new: ch.new || '', by: req.user.name }));
+      results.push({ person: pre, updated: Object.keys(patch) });
+    }
+    persist();
+    res.json({ ok: true, results });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Manual pull (admin): Salesforce → app for all (or given) contacts.
+app.post('/api/sf/pull-contacts', requireAdmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.contactIds) && req.body.contactIds.length ? req.body.contactIds : null;
+    const list = ids ? db.contacts.filter((c) => ids.includes(c.id)) : db.contacts;
+    const changes = await sfPullContacts(list);
+    res.json({ ok: true, changes, scanned: list.length, at: db.meta.sfLastPullAt });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Change report.
+app.get('/api/sf/changes', requireAdmin, (req, res) => {
+  const limit = Math.min(2000, parseInt(req.query.limit, 10) || 200);
+  res.json({ changes: db.syncLog.slice(-limit).reverse(), total: db.syncLog.length, lastPullAt: db.meta.sfLastPullAt });
+});
+app.get('/api/sf/changes.csv', requireAdmin, (req, res) => {
+  const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const rows = [['When', 'Direction', 'Household', 'Person', 'Field', 'Old', 'New', 'By']];
+  db.syncLog.slice().reverse().forEach((l) => rows.push([new Date(l.at).toISOString(), l.direction, l.contactName, l.person, l.field, l.old, l.new, l.by]));
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="salesforce-changes.csv"');
+  res.send(rows.map((r) => r.map(q).join(',')).join('\n'));
+});
+
 // ── ADMIN: USER MANAGEMENT ────────────────────────────────────────────────────
 app.get('/api/users', requireAdmin, (req, res) => {
   res.json({ users: db.users.map(safeUser) });
@@ -861,6 +976,23 @@ function start() {
   app.listen(PORT, () => {
     console.log(`[outreach] listening on :${PORT} (base path "${BASE_PATH || '/'}")`);
   });
+  scheduleSfSync();
+}
+
+// Automatic Salesforce → app contact pull every 24h (and once shortly after boot if overdue).
+function scheduleSfSync() {
+  const DAY = 24 * 60 * 60 * 1000;
+  const run = () => {
+    if (db.meta.salesforce && db.meta.salesforce.refreshToken) {
+      sfPullContacts(db.contacts)
+        .then((n) => console.log('[sf] daily contact pull: ' + n + ' change(s)'))
+        .catch((e) => console.error('[sf] daily contact pull failed:', e.message));
+    }
+  };
+  // If we've never pulled, wait a full day (the admin runs the first pull manually).
+  const since = db.meta.sfLastPullAt || Date.now();
+  const first = Math.max(60000, DAY - (Date.now() - since));
+  setTimeout(function tick() { run(); setTimeout(tick, DAY); }, first);
 }
 
 start();
