@@ -499,7 +499,9 @@ a{color:inherit;}
 .plan-arch{font-size:11px;font-weight:600;line-height:1;padding:5px 9px;border-radius:var(--r-sm);border:1px solid var(--border-2);background:var(--surface-2);color:var(--text-2);white-space:nowrap;transition:all .15s;}
 .plan-arch:hover{border-color:var(--red);color:var(--red);background:#fff;}
 .ask-reviewed{font-size:10px;font-weight:800;color:var(--emer);background:var(--emer-soft,#ecfdf5);border-radius:var(--r-pill);padding:2px 8px;text-transform:none;letter-spacing:0;}
-.sf-tag{font-size:9.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:var(--r-pill);padding:2px 7px;text-transform:none;letter-spacing:0;}
+.sf-tag{font-size:9.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:var(--r-pill);padding:2px 7px;text-transform:none;letter-spacing:0;white-space:nowrap;}
+.pnote-ro{font-size:13px;color:var(--text-2);line-height:1.5;white-space:pre-wrap;background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;}
+.ec-warn{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-soft);border-radius:var(--r-sm);padding:9px 11px;margin-bottom:14px;line-height:1.4;}
 .plan-tiercell{white-space:nowrap;}
 .plan-tier{font-size:12px;font-weight:600;padding:4px 6px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);color:var(--text);outline:none;max-width:120px;}
 .plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
@@ -1156,18 +1158,14 @@ function renderDetail(id){
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Enter <b>0</b> for the ask if none — marks it reviewed.</div>
     </div>
-    <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;">Household Contacts <button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></div>
+    <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">Household Contacts <span style="display:flex;gap:7px;align-items:center;flex-shrink:0;"><span class="sf-tag">⇄ Salesforce</span><button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></span></div>
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
       ${d.sName?`<div class="subhd" style="margin:9px 0 3px;">SECONDARY — ${esc(d.sName)}</div>`:''} ${d.sPhone?`<a class="clink" href="tel:${esc(d.sPhone)}">📞 ${esc(d.sPhone)}</a>`:''} ${d.sEmail?`<a class="clink" href="mailto:${esc(d.sEmail)}" style="font-size:13px;">✉️ ${esc(d.sEmail)}</a>`:''}
       ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
       ${(d.street||d.city||d.state||d.zip)?`<div class="subhd" style="margin:9px 0 3px;">ADDRESS</div><a class="clink" href="https://maps.google.com/?q=${encodeURIComponent([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}" target="_blank" rel="noopener">📍 ${esc([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}</a>`:''}
       ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone||d.street||d.city)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
-      <label class="field-lbl" style="margin-top:11px;display:flex;align-items:center;gap:7px;">Personal notes — ${esc(d.pName||'Primary')} <span class="sf-tag">⇄ Salesforce</span></label>
-      <textarea class="inp" id="pnotes-inp" placeholder="Personal notes for the primary contact…" style="width:100%;min-height:52px;resize:vertical;line-height:1.5;">${esc(d.pNotes||'')}</textarea>
-      ${d.sName?`<label class="field-lbl" style="margin-top:9px;display:flex;align-items:center;gap:7px;">Personal notes — ${esc(d.sName)} <span class="sf-tag">⇄ Salesforce</span></label>
-      <textarea class="inp" id="snotes-inp" placeholder="Personal notes for the secondary contact…" style="width:100%;min-height:52px;resize:vertical;line-height:1.5;">${esc(d.sNotes||'')}</textarea>`:''}
-      <label class="field-lbl" style="margin-top:11px;">Household notes</label>
-      <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:60px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
+      ${d.pNotes?`<div class="subhd" style="margin:11px 0 2px;">NOTES — ${esc(d.pName||'Primary')}</div><div class="pnote-ro">${esc(d.pNotes)}</div>`:''}
+      ${d.sName&&d.sNotes?`<div class="subhd" style="margin:9px 0 2px;">NOTES — ${esc(d.sName)}</div><div class="pnote-ro">${esc(d.sNotes)}</div>`:''}
     </div>
     ${accessCard}
     <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><button class="coll-toggle" id="profile-toggle" style="flex:1;text-align:left;">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})</button><button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button></div>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`:''}</div>
@@ -1372,8 +1370,29 @@ function renderSettings(){
     </div>
     ${currentUser&&currentUser.role==='admin'?`<div class="shead">Data Backups</div>
     <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Automatic snapshots of all your data — one is taken right before every import, and periodically as you work. If something goes wrong, restore a previous version.</p>
-    <div class="card"><div id="backup-list"><div class="bin-empty">Loading backups…</div></div></div>`:''}
+    <div class="card"><div id="backup-list"><div class="bin-empty">Loading backups…</div></div></div>
+    <div class="shead" style="color:var(--red);">Danger Zone</div>
+    <div class="card" style="border-color:var(--red);">
+      <div style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:11px;">Delete <b>every contact and every campaign</b> and start completely fresh. A backup is saved first, so you can still restore. This cannot be undone otherwise.</div>
+      <button class="savebtn danger" id="reset-all-btn">🗑 Delete ALL contacts &amp; campaigns</button>
+    </div>`:''}
   </div>`;
+}
+function resetAllData(){
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle" style="color:var(--red);">Delete everything?</div>
+    <div class="msub">This removes <b>all contacts and all campaigns</b> across the whole app and starts you with one empty campaign. A backup is saved first (Settings → Data Backups) so it's recoverable.</div>
+    <div class="mfield"><label class="mlbl">Type <b>DELETE</b> to confirm</label><input class="minp" id="reset-confirm" autocomplete="off" placeholder="DELETE"/></div>
+    <div class="mrow"><button class="mbtn s" id="reset-cancel">Cancel</button><button class="mbtn p" id="reset-go" style="background:var(--red);" disabled>Delete everything</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  const inp=document.getElementById('reset-confirm'),go=document.getElementById('reset-go');
+  inp.oninput=()=>{go.disabled=inp.value.trim()!=='DELETE';};
+  document.getElementById('reset-cancel').onclick=()=>m.remove();
+  go.onclick=()=>{m.remove();setStatus('saving');
+    api('/reset',{method:'POST'}).then(()=>loadState()).then(()=>{setStatus('saved');desktopDetailId=null;detailId=null;view='dashboard';render();alert('Done — everything was cleared. You have a fresh, empty campaign.');})
+      .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Could not reset: '+err.message);});};
 }
 
 // ── RENDER: ADMIN (TEAM) ───────────────────────────────────────────
@@ -1557,14 +1576,17 @@ function showEditContacts(id){
   const m=document.createElement('div');m.className='overlay';
   m.innerHTML=`<div class="sheet"><div class="mtitle">Edit Household Contacts</div>
     <div class="msub">${esc(d.name)}</div>
+    <div class="ec-warn">⚠ Saving here also updates this person's record in Salesforce.</div>
     <div class="subhd" style="margin:8px 0 4px;">PRIMARY</div>
     <div class="mfield"><label class="mlbl">Name</label><input class="minp" id="ec-pn" value="${esc(d.pName||'')}"/></div>
     <div class="mfield"><label class="mlbl">Mobile Phone</label><input class="minp" id="ec-pp" type="tel" value="${esc(d.pPhone||'')}"/></div>
     <div class="mfield"><label class="mlbl">Email</label><input class="minp" id="ec-pe" type="email" value="${esc(d.pEmail||'')}"/></div>
+    <div class="mfield"><label class="mlbl">Personal notes</label><textarea class="mta" id="ec-pnotes">${esc(d.pNotes||'')}</textarea></div>
     <div class="subhd" style="margin:12px 0 4px;">SECONDARY</div>
     <div class="mfield"><label class="mlbl">Name</label><input class="minp" id="ec-sn" value="${esc(d.sName||'')}"/></div>
     <div class="mfield"><label class="mlbl">Mobile Phone</label><input class="minp" id="ec-sp" type="tel" value="${esc(d.sPhone||'')}"/></div>
     <div class="mfield"><label class="mlbl">Email</label><input class="minp" id="ec-se" type="email" value="${esc(d.sEmail||'')}"/></div>
+    <div class="mfield"><label class="mlbl">Personal notes</label><textarea class="mta" id="ec-snotes">${esc(d.sNotes||'')}</textarea></div>
     <div class="mrow"><button class="mbtn s" id="ec-cancel">Cancel</button><button class="mbtn p" id="ec-save">Save</button></div>
   </div>`;
   document.body.appendChild(m);
@@ -1572,7 +1594,7 @@ function showEditContacts(id){
   document.getElementById('ec-cancel').onclick=()=>m.remove();
   document.getElementById('ec-save').onclick=()=>{
     const g=eid=>document.getElementById(eid).value.trim();
-    updateDonor(id,{pName:g('ec-pn'),pPhone:g('ec-pp'),pEmail:g('ec-pe'),sName:g('ec-sn'),sPhone:g('ec-sp'),sEmail:g('ec-se')});
+    updateDonor(id,{pName:g('ec-pn'),pPhone:g('ec-pp'),pEmail:g('ec-pe'),pNotes:g('ec-pnotes'),sName:g('ec-sn'),sPhone:g('ec-sp'),sEmail:g('ec-se'),sNotes:g('ec-snotes')});
     m.remove();render();
   };
 }
@@ -1751,9 +1773,6 @@ function attachEvents(){
   document.getElementById('prevmonthly-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;const yr=document.getElementById('prevmonthly-yr');if(yr)yr.textContent=v>0?'= '+fmt(v*12)+' / yr':'';});
   document.getElementById('prevmonthly-inp')?.addEventListener('change',e=>{const raw=e.target.value.trim();updateDonor(activeDetailId,{prevMonthly:raw===''?null:(parseFloat(raw)||0)});});
   document.getElementById('asknotes-inp')?.addEventListener('change',e=>{updateDonor(activeDetailId,{askNotes:e.target.value});});
-  document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
-  document.getElementById('pnotes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{pNotes:e.target.value});});
-  document.getElementById('snotes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{sNotes:e.target.value});});
   const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
   document.getElementById('pledge-amt')?.addEventListener('change',savePledgeAmt);
   document.getElementById('pledge-amt-save')?.addEventListener('click',savePledgeAmt);
@@ -1817,6 +1836,7 @@ function attachEvents(){
   document.getElementById('fin-btn')?.addEventListener('click',exportFinancial);
   document.getElementById('sample-btn')?.addEventListener('click',downloadSample);
   if(document.getElementById('backup-list'))loadBackups();
+  document.getElementById('reset-all-btn')?.addEventListener('click',resetAllData);
 
   // Admin
   document.getElementById('add-user-btn')?.addEventListener('click',()=>showUserModal(null));

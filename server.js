@@ -427,6 +427,15 @@ app.post('/api/backups/restore', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Master reset (admin): wipe ALL contacts and campaigns, start fresh. Keeps users + login.
+app.post('/api/reset', requireAdmin, (req, res) => {
+  snapshot('before-reset');
+  db.contacts = [];
+  db.campaigns = [{ id: newId('camp'), name: 'My Campaign', createdAt: Date.now(), createdBy: req.user.id }];
+  persist();
+  res.json({ ok: true, campaigns: db.campaigns });
+});
+
 app.put('/api/settings', (req, res) => {
   db.settingsByUser[req.user.id] = Object.assign(defaultSettings(), req.body || {});
   persist();
