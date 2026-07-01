@@ -479,6 +479,7 @@ a{color:inherit;}
 .plan-act{width:36px;text-align:center;}
 .plan-arch{font-size:14px;line-height:1;padding:4px 6px;border-radius:var(--r-sm);opacity:.6;transition:opacity .15s,background .15s;}
 .plan-arch:hover{opacity:1;background:var(--surface-2);}
+.ask-reviewed{font-size:10px;font-weight:800;color:var(--emer);background:var(--emer-soft,#ecfdf5);border-radius:var(--r-pill);padding:2px 8px;text-transform:none;letter-spacing:0;}
 .plan-tiercell{white-space:nowrap;}
 .plan-tier{font-size:12px;font-weight:600;padding:4px 6px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);color:var(--text);outline:none;max-width:120px;}
 .plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
@@ -1073,10 +1074,11 @@ function renderDetail(id){
 
   return`<div class="dhdr">${isDesktop?'':'<button class="backbtn" id="back-btn">←</button>'}<div class="dh-main"><div class="dhtitle">${esc(d.name)}</div><div class="dhsub">${esc(d.city)}${d.state?', '+esc(d.state):''}</div></div>${d.chaiClub?'<span class="chai-badge">♾️ Chai Club</span>':''}<span class="tier-badge" style="background:${tc.bg};color:${tc.color};">${tc.label}</span></div>
   <div class="dbody">
-    <div class="card"><div class="ctitle">Donation Targets</div>
-      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Year</div><div class="tval">${fmt(d.actual)}</div></div></div>
-      <label class="field-lbl">My Ask Target This Year</label>
-      <div class="r2"><input class="inp" id="target-inp" type="number" inputmode="numeric" value="${d.target||''}" placeholder="Amount…" style="flex:0 1 200px;max-width:100%;"/></div>
+    <div class="card"><div class="ctitle">Ask Amounts</div>
+      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Year</div><input class="tval-inp" data-tgt="actual" type="number" inputmode="numeric" value="${d.actual||''}" placeholder="—"/></div></div>
+      <label class="field-lbl" style="margin-top:11px;display:flex;align-items:center;gap:8px;">Will any of this ask be monthly?${d.askMonthly!=null?'<span class="ask-reviewed">✓ reviewed</span>':''}</label>
+      <div class="r2"><input class="inp" id="askmonthly-inp" type="number" inputmode="numeric" value="${d.askMonthly==null?'':d.askMonthly}" placeholder="Monthly $ — or 0 if none" style="flex:0 1 220px;max-width:100%;"/></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:6px;">Enter the monthly part of your ask, or <b>0</b> if none — so you know you've thought it through. (It only becomes a Chai Club commitment once they actually pledge.)</div>
     </div>
     <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;">Household Contacts <button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></div>
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
@@ -1187,6 +1189,29 @@ function updatePlanBars(){
     if(pc)pc.textContent=s.goal>0?pct+'% of goal':'set a goal to see %';
   });
 }
+// Fill each contact's "Last Year" from what they pledged in a past campaign (matched by Salesforce contact).
+function showPullLastYear(){
+  const others=campaigns.filter(c=>c.id!==activeCampaignId);
+  if(!others.length){alert('There are no other campaigns to pull from yet.');return;}
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Pull "Last Year" from a past campaign</div>
+    <div class="msub">Fills each contact's Last Year with what they pledged in the campaign you pick (matched by Salesforce contact). You can still edit any by hand after.</div>
+    ${others.map(c=>`<button class="savebtn alt" data-pull-src="${esc(c.id)}" style="text-align:left;margin-bottom:9px;">${esc(c.name)}${c.archived?' (archived)':''}</button>`).join('')}
+    <div class="mrow" style="margin-top:8px;"><button class="mbtn s" id="pull-cancel">Cancel</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('pull-cancel').onclick=()=>m.remove();
+  m.querySelectorAll('[data-pull-src]').forEach(b=>b.onclick=()=>{m.remove();pullLastYearFrom(b.dataset.pullSrc);});
+}
+function pullLastYearFrom(srcId){
+  const src=campaigns.find(c=>c.id===srcId);if(!src)return;
+  const srcContacts=donors.filter(d=>d.campaignId===srcId);
+  const cur=campaignDonors();let matched=0;
+  cur.forEach(c=>{const m=srcContacts.find(d=>(c.pId&&d.pId===c.pId)||(d.name===c.name));if(m){updateDonor(c.id,{actual:m.pledgeAmount||m.actual||0});matched++;}});
+  render();
+  alert(`Filled "Last Year" for ${matched} of ${cur.length} contact${cur.length!==1?'s':''} from "${src.name}".`+(matched<cur.length?' The rest had no match — enter those by hand.':''));
+}
 function renderPlan(){
   const s=planStats();
   const sorted=campaignDonors().slice();
@@ -1221,7 +1246,8 @@ function renderPlan(){
     <div class="card">
       <div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><span style="display:flex;align-items:center;gap:8px;">Your asks ${s.nNoTarget>0?`<span class="plan-warn">${s.nNoTarget} with no target yet</span>`:''}</span>
       <select id="plan-sort" class="ssel" style="flex:0 1 auto;">${sortOpts.map(([v,l])=>`<option value="${v}"${planSort===v?' selected':''}>Sort: ${l}</option>`).join('')}</select></div>
-      <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 10px;">Set each person's <b>tier</b> first, then their High / Med / Low. Tap a name to open details · 🗄 archives someone who won't give.</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 8px;">Set each person's <b>tier</b> first, then their High / Med / Low. Tap a name to open details · 🗄 archives someone who won't give.</div>
+      <button class="chip" id="pull-lastyear-btn" style="margin-bottom:10px;">↩ Pull "Last Year" from a past campaign</button>
       <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Tier</th><th>Low</th><th>Med</th><th>High</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
     </div>
   </div>`;
@@ -1583,6 +1609,7 @@ function attachEvents(){
   document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();}));
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
+  document.getElementById('pull-lastyear-btn')?.addEventListener('click',showPullLastYear);
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
@@ -1631,8 +1658,8 @@ function attachEvents(){
   document.getElementById('edit-contacts-btn')?.addEventListener('click',()=>showEditContacts(activeDetailId));
   document.getElementById('edit-fields-btn')?.addEventListener('click',()=>showEditFields(activeDetailId));
 
-  document.getElementById('target-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{target:v});});
-  document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(activeDetailId,{[e.target.dataset.tgt]:v});}));
+  document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;const tgt=e.target.dataset.tgt;const ch={[tgt]:v};if(tgt==='high')ch.target=v;updateDonor(activeDetailId,ch);}));
+  document.getElementById('askmonthly-inp')?.addEventListener('change',e=>{const raw=e.target.value.trim();updateDonor(activeDetailId,{askMonthly:raw===''?null:(parseFloat(raw)||0)});render();});
   document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
   const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
   document.getElementById('pledge-amt')?.addEventListener('change',savePledgeAmt);
