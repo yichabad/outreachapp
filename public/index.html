@@ -508,7 +508,7 @@ const PRE_ARC=['Not Contacted','Reached Out','Had Conversation','Thinking It Ove
 const POST_ARC=['Thanked','Report Sent','Personal Touch','Event Invited','Ready for Next Ask'];
 const INT_TYPES=['📞 Call','💬 Text','📧 Email','🤝 Meeting','📮 Voicemail','📝 Other','📄 Report','📰 Newsletter'];
 const PAY_PLANS=['Monthly','Quarterly','Yearly','One-time','Specific Date','Custom'];
-const KNOWN_COLS=new Set(['Name','Household: Account ID','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
+const KNOWN_COLS=new Set(['Name','Household: Account ID','Account ID','Account Phone','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','Snapshot: Latest Donation','Snapshot: Latest Donation Date','Snapshot: Largest Donation','Snapshot: YTD donation summary','Snapshot: Last Year donation summary','Snapshot: 2 Years ago donation summary','Snapshot: 3 Years ago donation summary','Snapshot: 4 Years ago donation summary','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
 const CHEERS=['Great work! Keep going! 💪','You\'re on fire! 🔥','Every call counts! ✨','Making a difference! 🌟','That\'s what it\'s about! 🙌','Yasher koach! 🏆','Keep the momentum! 🚀','One step closer! ⭐'];
 const HEBREW_RESULT='לא עליך המלאכה לגמור';
 const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
@@ -645,20 +645,30 @@ function getStats(){
 function parseDonorRow(row){
   const name=str(row['Name']);if(!name)return null;
   const get=(...keys)=>{for(const k of keys){if(row[k]!==undefined&&row[k]!==''&&row[k]!==null)return row[k];}return '';};
+  // Money parser: tolerate Salesforce-formatted values like "$5,000".
+  const money=(...keys)=>{const n=parseFloat(String(get(...keys)).replace(/[^0-9.\-]/g,''));return isNaN(n)?0:n;};
   const tier=TIERS.includes(str(row['Tier']).toLowerCase())?str(row['Tier']).toLowerCase():'general';
   const custom={};
   Object.keys(row).forEach(k=>{if(!KNOWN_COLS.has(k)&&str(row[k])!=='')custom[k]=str(row[k]);});
-  const high=parseFloat(row['High'])||0;
-  const id=str(row['Primary Contact: Contact ID'])||(name+'_'+Math.random().toString(36).slice(2));
-  return{id,name,householdId:str(row['Household: Account ID']),pName:str(row['Primary Contact: Name']),sName:str(row['Secondary Contact: Name']),
-    pPhone:str(get('Primary Contact: Mobile Phone')),sPhone:str(get('Secondary Contact: Mobile Phone')),
+  const high=money('High');
+  const pid=str(get('Primary Contact: Contact ID'));
+  const id=pid||(name+'_'+Math.random().toString(36).slice(2));
+  // Year-by-year giving: Salesforce's RELATIVE labels (Last Year, 2 Years ago…) map to real
+  // calendar years, plus YTD (current year) and any legacy fixed-year columns.
+  const years={};const yr=new Date().getFullYear();
+  [['Snapshot: Last Year donation summary',1],['Snapshot: 2 Years ago donation summary',2],['Snapshot: 3 Years ago donation summary',3],['Snapshot: 4 Years ago donation summary',4]].forEach(([k,back])=>{const v=money(k);if(v)years[String(yr-back)]=v;});
+  const ytd=money('Snapshot: YTD donation summary');if(ytd)years[String(yr)]=ytd;
+  ['2021','2022','2023','2024','2025'].forEach(y=>{const v=money(y);if(v)years[y]=v;});
+  const actual=years[String(yr-1)]||money('Actual')||0;
+  return{id,name,householdId:str(get('Account ID','Household: Account ID')),pName:str(get('Primary Contact: Name')),sName:str(get('Secondary Contact: Name')),
+    pPhone:str(get('Primary Contact: Mobile Phone')),sPhone:str(get('Secondary Contact: Mobile Phone')),homePhone:str(get('Account Phone')),
     pEmail:str(get('Primary Contact: Email')),sEmail:str(get('Secondary Contact: Email')),
-    pId:str(row['Primary Contact: Contact ID']),sId:str(row['Secondary Contact: Contact ID']),
-    high,medium:parseFloat(row['Medium'])||0,low:parseFloat(row['Low'])||0,target:high,
-    actual:parseFloat(row['Actual'])||0,latestDonation:parseFloat(get('Latest Donation ','Latest Donation'))||0,
-    latestDate:fmtDate(get('Latest Donation Date')),largestDonation:parseFloat(row['Largest Donation'])||0,
+    pId:pid,sId:str(get('Secondary Contact: Contact ID')),
+    high,medium:money('Medium'),low:money('Low'),target:high,
+    actual,latestDonation:money('Snapshot: Latest Donation','Latest Donation ','Latest Donation'),
+    latestDate:fmtDate(get('Snapshot: Latest Donation Date','Latest Donation Date')),largestDonation:money('Snapshot: Largest Donation','Largest Donation'),
     city:str(row['City']),state:str(row['State']),street:str(row['Street']),zip:str(row['Postal Code']),
-    notes:str(row['Amb.']),tier,years:['2021','2022','2023','2024','2025'].reduce((o,y)=>{const v=parseFloat(row[y]);if(v)o[y]=v;return o;},{}),
+    notes:str(row['Amb.']),tier,years,
     custom,preArcStage:0,postArcStage:undefined,pledgeAmount:0,pledgePaid:0,pledgePlan:'',pledgePlanNote:'',payments:[],
     retailTarget:settings.tierDefaults[tier].retail,wholesaleTarget:settings.tierDefaults[tier].wholesale,
     interactions:[],tasks:[]};
@@ -688,7 +698,7 @@ function handleFile(file){
       const name=str(row['Name']);
       if(!name){issues.push({row:excelRow,level:'error',name:'',msg:'No Name — row skipped (cannot import).'});return;}
       const missing=[];
-      if(!str(row['Household: Account ID']))missing.push('Household: Account ID');
+      if(!str(row['Account ID'])&&!str(row['Household: Account ID']))missing.push('Account ID');
       if(!str(row['Primary Contact: Contact ID']))missing.push('Primary Contact: Contact ID');
       if(missing.length)issues.push({row:excelRow,level:'warning',name,msg:'Missing '+missing.join(' & ')+' — imports, but won’t sync with Salesforce.'});
       const pid=str(row['Primary Contact: Contact ID']);
@@ -1058,7 +1068,8 @@ function renderDetail(id){
     <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;">Household Contacts <button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></div>
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
       ${d.sName?`<div class="subhd" style="margin:9px 0 3px;">SECONDARY — ${esc(d.sName)}</div>`:''} ${d.sPhone?`<a class="clink" href="tel:${esc(d.sPhone)}">📞 ${esc(d.sPhone)}</a>`:''} ${d.sEmail?`<a class="clink" href="mailto:${esc(d.sEmail)}" style="font-size:13px;">✉️ ${esc(d.sEmail)}</a>`:''}
-      ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
+      ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
+      ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
       <label class="field-lbl" style="margin-top:11px;">Notes</label>
       <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:66px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
     </div>
