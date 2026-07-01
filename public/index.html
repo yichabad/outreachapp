@@ -501,6 +501,8 @@ a{color:inherit;}
 .ask-reviewed{font-size:10px;font-weight:800;color:var(--emer);background:var(--emer-soft,#ecfdf5);border-radius:var(--r-pill);padding:2px 8px;text-transform:none;letter-spacing:0;}
 .sf-tag{font-size:9.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:var(--r-pill);padding:2px 7px;text-transform:none;letter-spacing:0;white-space:nowrap;}
 .pnote-ro{font-size:13px;color:var(--text-2);line-height:1.5;white-space:pre-wrap;background:var(--surface-2);border-radius:var(--r-sm);padding:8px 10px;}
+.pnote-ro.clamp{max-height:4.6em;overflow:hidden;}
+.note-toggle{font-size:11px;color:var(--brand);font-weight:700;margin-top:4px;padding:2px 0;}
 .ec-warn{font-size:12px;font-weight:600;color:var(--amber);background:var(--amber-soft);border-radius:var(--r-sm);padding:9px 11px;margin-bottom:14px;line-height:1.4;}
 .plan-tiercell{white-space:nowrap;}
 .plan-tier{font-size:12px;font-weight:600;padding:4px 6px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);color:var(--text);outline:none;max-width:120px;}
@@ -608,7 +610,18 @@ function canManageContact(d){return !!currentUser&&(currentUser.role==='admin'||
 function archivedDonors(){return campaignDonorsAll().filter(d=>d.status==='archived'&&canManageContact(d));}
 function trashedDonors(){return campaignDonorsAll().filter(d=>d.status==='trashed'&&canManageContact(d));}
 function updateDonor(id,ch){donors=donors.map(d=>d.id===id?{...d,...ch}:d);markContact(id);}
-function str(v){return String(v==null?'':v).trim();}
+// Repair "mojibake" — UTF-8 text that got mangled on export (e.g. "itâ€™s" → "it’s").
+// The mangled chars come from Windows-1252, whose byte values differ from their Unicode points
+// in 0x80–0x9F, so map those back to their real bytes before re-decoding as UTF-8.
+const CP1252_REV={0x20AC:0x80,0x201A:0x82,0x0192:0x83,0x201E:0x84,0x2026:0x85,0x2020:0x86,0x2021:0x87,0x02C6:0x88,0x2030:0x89,0x0160:0x8A,0x2039:0x8B,0x0152:0x8C,0x017D:0x8E,0x2018:0x91,0x2019:0x92,0x201C:0x93,0x201D:0x94,0x2022:0x95,0x2013:0x96,0x2014:0x97,0x02DC:0x98,0x2122:0x99,0x0161:0x9A,0x203A:0x9B,0x0153:0x9C,0x017E:0x9E,0x0178:0x9F};
+function fixMojibake(s){
+  if(!s||!/[ÂÃâ]/.test(s))return s;
+  try{const b=[];for(const ch of s){const cp=ch.codePointAt(0);let x;if(cp<=0xFF)x=cp;else if(CP1252_REV[cp]!=null)x=CP1252_REV[cp];else return s;b.push(x);}
+    const dec=new TextDecoder('utf-8',{fatal:false}).decode(Uint8Array.from(b));return dec.indexOf('�')>=0?s:dec;}catch{return s;}
+}
+function str(v){return fixMojibake(String(v==null?'':v).trim());}
+// Read-only note with a Show more/less toggle when long.
+function noteRO(label,text){const t=text||'';const long=t.length>160;return `<div class="subhd" style="margin:11px 0 2px;">${esc(label)}</div><div class="pnote-ro${long?' clamp':''}">${esc(t)}</div>${long?'<button class="note-toggle" data-note-toggle>Show more ▾</button>':''}`;}
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function today(){return new Date().toISOString().slice(0,10);}
 function fmt(n){return(!n&&n!==0)||n===0?'—':'$'+Number(n).toLocaleString();}
@@ -1164,8 +1177,8 @@ function renderDetail(id){
       ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
       ${(d.street||d.city||d.state||d.zip)?`<div class="subhd" style="margin:9px 0 3px;">ADDRESS</div><a class="clink" href="https://maps.google.com/?q=${encodeURIComponent([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}" target="_blank" rel="noopener">📍 ${esc([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}</a>`:''}
       ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone||d.street||d.city)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
-      ${d.pNotes?`<div class="subhd" style="margin:11px 0 2px;">NOTES — ${esc(d.pName||'Primary')}</div><div class="pnote-ro">${esc(d.pNotes)}</div>`:''}
-      ${d.sName&&d.sNotes?`<div class="subhd" style="margin:9px 0 2px;">NOTES — ${esc(d.sName)}</div><div class="pnote-ro">${esc(d.sNotes)}</div>`:''}
+      ${d.pNotes?noteRO('NOTES — '+(d.pName||'Primary'),d.pNotes):''}
+      ${d.sName&&d.sNotes?noteRO('NOTES — '+d.sName,d.sNotes):''}
     </div>
     ${accessCard}
     <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><button class="coll-toggle" id="profile-toggle" style="flex:1;text-align:left;">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})</button><button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button></div>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`:''}</div>
@@ -1326,6 +1339,7 @@ function renderPlan(){
       <select id="plan-sort" class="ssel" style="flex:0 1 auto;">${sortOpts.map(([v,l])=>`<option value="${v}"${planSort===v?' selected':''}>Sort: ${l}</option>`).join('')}</select></div>
       <div style="font-size:11.5px;color:var(--text-3);margin:2px 0 8px;">Set each person's <b>tier</b> first, then their High / Med / Low. Tap a name to open details · 🗄 archives someone who won't give.</div>
       <button class="chip" id="pull-lastyear-btn" style="font-size:11px;margin-bottom:10px;">↩ Pull last year's annual campaign pledges (one-time)</button>
+      <input class="sinput" id="plan-search" placeholder="🔍 Search this list by name…" style="margin-bottom:10px;"/>
       <div class="plan-table-wrap"><table class="plan-table"><thead><tr><th>Contact</th><th>Tier</th><th>Low</th><th>Med</th><th>High</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="plan-empty">No contacts in this campaign yet.</td></tr>'}</tbody></table></div>
     </div>
   </div>`;
@@ -1705,6 +1719,7 @@ function attachEvents(){
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
   document.getElementById('pull-lastyear-btn')?.addEventListener('click',showPullLastYear);
+  document.getElementById('plan-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.plan-table tbody tr').forEach(tr=>{const nm=(tr.querySelector('.plan-name')?.textContent||'').toLowerCase();tr.style.display=nm.includes(q)?'':'none';});});
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
@@ -1751,6 +1766,7 @@ function attachEvents(){
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
   document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
   document.getElementById('edit-contacts-btn')?.addEventListener('click',()=>showEditContacts(activeDetailId));
+  document.querySelectorAll('[data-note-toggle]').forEach(b=>b.onclick=()=>{const n=b.previousElementSibling;if(!n)return;const clamped=n.classList.toggle('clamp');b.textContent=clamped?'Show more ▾':'Show less ▴';});
   document.getElementById('edit-fields-btn')?.addEventListener('click',()=>showEditFields(activeDetailId));
 
   document.querySelectorAll('input[data-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;const tgt=e.target.dataset.tgt;const ch={[tgt]:v};if(tgt==='high')ch.target=v;updateDonor(activeDetailId,ch);}));
