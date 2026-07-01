@@ -1082,7 +1082,8 @@ function renderDetail(id){
       ${d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
       ${d.sName?`<div class="subhd" style="margin:9px 0 3px;">SECONDARY — ${esc(d.sName)}</div>`:''} ${d.sPhone?`<a class="clink" href="tel:${esc(d.sPhone)}">📞 ${esc(d.sPhone)}</a>`:''} ${d.sEmail?`<a class="clink" href="mailto:${esc(d.sEmail)}" style="font-size:13px;">✉️ ${esc(d.sEmail)}</a>`:''}
       ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
-      ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
+      ${(d.street||d.city||d.state||d.zip)?`<div class="subhd" style="margin:9px 0 3px;">ADDRESS</div><a class="clink" href="https://maps.google.com/?q=${encodeURIComponent([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}" target="_blank" rel="noopener">📍 ${esc([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}</a>`:''}
+      ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone||d.street||d.city)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
       <label class="field-lbl" style="margin-top:11px;">Notes</label>
       <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:66px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
     </div>
@@ -1257,6 +1258,9 @@ function renderSettings(){
     <div class="card"><div class="ctitle">🗑 Recycle Bin (${trashedDonors().length})</div>
       ${trashedDonors().length?trashedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button><button class="chip danger-chip" data-purge="${d.id}">Delete forever</button></div></div>`).join(''):'<div class="bin-empty">Recycle bin is empty.</div>'}
     </div>
+    ${currentUser&&currentUser.role==='admin'?`<div class="shead">Data Backups</div>
+    <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Automatic snapshots of all your data — one is taken right before every import, and periodically as you work. If something goes wrong, restore a previous version.</p>
+    <div class="card"><div id="backup-list"><div class="bin-empty">Loading backups…</div></div></div>`:''}
   </div>`;
 }
 
@@ -1692,6 +1696,7 @@ function attachEvents(){
   document.getElementById('export-btn')?.addEventListener('click',exportCSV);
   document.getElementById('fin-btn')?.addEventListener('click',exportFinancial);
   document.getElementById('sample-btn')?.addEventListener('click',downloadSample);
+  if(document.getElementById('backup-list'))loadBackups();
 
   // Admin
   document.getElementById('add-user-btn')?.addEventListener('click',()=>showUserModal(null));
@@ -1902,6 +1907,24 @@ async function loadState(){
   if(!dashState.streak)dashState.streak={date:'',count:0,lastGoal:0};
   if(!Array.isArray(dashState.doneCalls))dashState.doneCalls=[];
   writeCache();
+}
+const BACKUP_REASONS={'before-import':'before an import','before-restore':'before a restore','before-campaign-delete':'before deleting a campaign','auto':'auto-save'};
+function loadBackups(){
+  api('/backups').then(res=>{
+    const el=document.getElementById('backup-list');if(!el)return;
+    const bs=res.backups||[];
+    if(!bs.length){el.innerHTML='<div class="bin-empty">No backups yet.</div>';return;}
+    el.innerHTML=bs.map(b=>`<div class="bin-row"><span class="bin-name" style="cursor:default;">${esc(new Date(b.at).toLocaleString())}<div style="font-size:11.5px;color:var(--text-3);font-weight:500;">${esc(BACKUP_REASONS[b.reason]||b.reason)} · ${b.contacts==null?'?':b.contacts} contacts · ${b.campaigns==null?'?':b.campaigns} campaigns</div></span><div class="bin-actions"><button class="chip" data-restore-backup="${esc(b.file)}">Restore</button></div></div>`).join('');
+    el.querySelectorAll('[data-restore-backup]').forEach(btn=>btn.onclick=()=>restoreBackup(btn.dataset.restoreBackup));
+  }).catch(()=>{});
+}
+function restoreBackup(file){
+  if(!confirm('Restore this backup?\n\nYour current contacts, campaigns and settings will be replaced with this saved version. A snapshot of the current data is taken first, so this can be undone too.'))return;
+  setStatus('saving');
+  api('/backups/restore',{method:'POST',body:JSON.stringify({file})})
+    .then(()=>loadState())
+    .then(()=>{setStatus('saved');desktopDetailId=null;detailId=null;view='dashboard';render();alert('Done — your data has been rolled back to that version.');})
+    .catch(err=>{if(err.code===401)return;setStatus('offline');alert('Restore failed: '+err.message);});
 }
 
 async function boot(){

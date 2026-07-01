@@ -56,8 +56,28 @@ function loadDB() {
   }
 }
 
+// ── BACKUPS / VERSIONING ──────────────────────────────────────────────────
+// Rolling snapshots of the whole data file so a bad import/edit can be rolled back.
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
+const MAX_BACKUPS = 40;
+let lastSnapshotAt = 0;
+function snapshot(reason) {
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const safe = String(reason || 'auto').replace(/[^a-z0-9_-]/gi, '').slice(0, 40) || 'auto';
+    fs.writeFileSync(path.join(BACKUP_DIR, stamp + '__' + safe + '.json'), JSON.stringify(db));
+    lastSnapshotAt = Date.now();
+    const files = fs.readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.json')).sort();
+    while (files.length > MAX_BACKUPS) { try { fs.unlinkSync(path.join(BACKUP_DIR, files.shift())); } catch {} }
+  } catch (e) { console.error('snapshot error', e); }
+}
+// Periodic safety snapshot (at most once per 20 min of activity).
+function autoSnapshot() { if (Date.now() - lastSnapshotAt > 20 * 60 * 1000) snapshot('auto'); }
+
 let writeChain = Promise.resolve();
 function persist() {
+  autoSnapshot();
   const snapshot = JSON.stringify(db);
   writeChain = writeChain.then(() => new Promise((resolve) => {
     const tmp = DB_FILE + '.tmp';
@@ -281,6 +301,7 @@ app.delete('/api/contacts/:id', (req, res) => {
 // contacts are updated only when the importer already has access.
 app.post('/api/contacts/bulk', (req, res) => {
   const incoming = Array.isArray(req.body.contacts) ? req.body.contacts : [];
+  if (incoming.length) snapshot('before-import'); // so an import can be rolled back
   let created = 0, updated = 0, skipped = 0;
   incoming.forEach((raw) => {
     const data = stripManaged(raw);
@@ -365,10 +386,45 @@ app.delete('/api/campaigns/:id', requireAdmin, (req, res) => {
   if (!db.campaigns.find((c) => c.id === id)) {
     return res.json({ ok: true, campaigns: db.campaigns });
   }
+  snapshot('before-campaign-delete');
   db.campaigns = db.campaigns.filter((c) => c.id !== id);
   db.contacts = db.contacts.filter((c) => c.campaignId !== id);
   persist();
   res.json({ ok: true, campaigns: db.campaigns });
+});
+
+// ── BACKUPS (admin) ───────────────────────────────────────────────────────
+app.get('/api/backups', requireAdmin, (req, res) => {
+  let backups = [];
+  try {
+    fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    backups = fs.readdirSync(BACKUP_DIR).filter((f) => f.endsWith('.json')).sort().reverse().slice(0, MAX_BACKUPS).map((f) => {
+      let contacts = null, campaigns = null;
+      try { const d = JSON.parse(fs.readFileSync(path.join(BACKUP_DIR, f), 'utf8')); contacts = (d.contacts || []).length; campaigns = (d.campaigns || []).length; } catch {}
+      const at = fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs;
+      const reason = (f.replace('.json', '').split('__')[1]) || 'auto';
+      return { file: f, at, reason, contacts, campaigns };
+    });
+  } catch (e) { console.error('list backups', e); }
+  res.json({ backups });
+});
+
+app.post('/api/backups/restore', requireAdmin, (req, res) => {
+  const file = String(req.body.file || '');
+  if (!/^[A-Za-z0-9_.\-]+\.json$/.test(file)) return res.status(400).json({ error: 'Bad backup name.' });
+  const full = path.join(BACKUP_DIR, file);
+  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Backup not found.' });
+  let restored;
+  try { restored = JSON.parse(fs.readFileSync(full, 'utf8')); } catch { return res.status(500).json({ error: 'Backup is unreadable.' }); }
+  snapshot('before-restore'); // so a restore itself can be undone
+  // Restore DATA only; keep current users + session secret so nobody gets locked out.
+  db.contacts = restored.contacts || [];
+  db.campaigns = restored.campaigns || [];
+  db.settingsByUser = restored.settingsByUser || {};
+  db.dashByUser = restored.dashByUser || {};
+  if (!db.campaigns.length) db.campaigns.push({ id: newId('camp'), name: 'Beta — test data', createdAt: Date.now() });
+  persist();
+  res.json({ ok: true });
 });
 
 app.put('/api/settings', (req, res) => {
