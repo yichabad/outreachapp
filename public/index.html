@@ -713,7 +713,12 @@ function handleFile(file){
 
     const doImport=()=>{
       // Preserve any existing activity for contacts already in my list.
-      valid.forEach(p=>{p.campaignId=activeCampaignId;const ex=campaignDonorsAll().find(d=>d.id===p.id||d.name===p.name);
+      valid.forEach(p=>{p.campaignId=activeCampaignId;
+        // Match ONLY within the active campaign, by Salesforce Contact ID (pId) then name — so an import
+        // can never steal a person's record out of another campaign. New contacts get a campaign-scoped
+        // id so the same person can live independently in multiple campaigns.
+        const ex=campaignDonorsAll().find(d=>(p.pId&&d.pId===p.pId)||(d.name===p.name));
+        if(!ex)p.id=activeCampaignId+'::'+(p.pId||('new_'+Math.random().toString(36).slice(2)));
         if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
           p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
           p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];p.status=ex.status;
@@ -1531,13 +1536,16 @@ function render(){
     leftContent=renderList();
     rightContent=desktopDetailId?renderDetail(desktopDetailId):EMPTY_DETAIL;
   }
+  // Plan tab: on desktop, opening a contact shows it in the right sidebar while you stay in Plan.
+  const planSplit=isDesktop&&view==='plan'&&desktopDetailId;
+  if(planSplit)rightContent=renderDetail(desktopDetailId);
 
   if(!(!isDesktop&&view==='detail'))leftContent=campaignSwitcherHTML()+leftContent;
 
   const nav=navHTML();
   const app=document.getElementById('app');
   if(isDesktop){
-    if(view==='list'||view==='detail'){
+    if(view==='list'||view==='detail'||planSplit){
       app.innerHTML=`<div class="shell">${nav}<div class="left-panel"><div class="left-scroll">${leftContent}</div></div><div class="right-panel">${rightContent}</div></div>`;
     } else {
       app.innerHTML=`<div class="shell">${nav}<div class="page">${leftContent}</div></div>`;
@@ -1691,7 +1699,7 @@ function attachEvents(){
 }
 
 function openDetail(id){
-  if(window.innerWidth>=900){desktopDetailId=id;view='list';render();}
+  if(window.innerWidth>=900){desktopDetailId=id;if(view!=='plan')view='list';render();}
   else{detailId=id;view='detail';render();}
 }
 function openDetailToLog(id){
