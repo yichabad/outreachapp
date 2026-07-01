@@ -499,6 +499,7 @@ a{color:inherit;}
 .plan-arch{font-size:11px;font-weight:600;line-height:1;padding:5px 9px;border-radius:var(--r-sm);border:1px solid var(--border-2);background:var(--surface-2);color:var(--text-2);white-space:nowrap;transition:all .15s;}
 .plan-arch:hover{border-color:var(--red);color:var(--red);background:#fff;}
 .ask-reviewed{font-size:10px;font-weight:800;color:var(--emer);background:var(--emer-soft,#ecfdf5);border-radius:var(--r-pill);padding:2px 8px;text-transform:none;letter-spacing:0;}
+.sf-tag{font-size:9.5px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:var(--r-pill);padding:2px 7px;text-transform:none;letter-spacing:0;}
 .plan-tiercell{white-space:nowrap;}
 .plan-tier{font-size:12px;font-weight:600;padding:4px 6px;border-radius:var(--r-sm);border:1.5px solid var(--border-2);background:var(--surface-2);color:var(--text);outline:none;max-width:120px;}
 .plan-committed{text-align:right;color:var(--emer);font-weight:700;font-size:12px;}
@@ -530,7 +531,7 @@ const PRE_ARC=['Not Contacted','Reached Out','Had Conversation','Thinking It Ove
 const POST_ARC=['Thanked','Report Sent','Personal Touch','Event Invited','Ready for Next Ask'];
 const INT_TYPES=['📞 Call','💬 Text','📧 Email','🤝 Meeting','📮 Voicemail','📝 Other','📄 Report','📰 Newsletter'];
 const PAY_PLANS=['Monthly','Quarterly','Yearly','One-time','Specific Date','Custom'];
-const KNOWN_COLS=new Set(['Name','Household: Account ID','Account ID','Account Phone','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','Snapshot: Latest Donation','Snapshot: Latest Donation Date','Snapshot: Largest Donation','Snapshot: YTD donation summary','Snapshot: Last Year donation summary','Snapshot: 2 Years ago donation summary','Snapshot: 3 Years ago donation summary','Snapshot: 4 Years ago donation summary','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
+const KNOWN_COLS=new Set(['Name','Household: Account ID','Account ID','Account Phone','High','Medium','Low','Actual','Amb.','Tier','Latest Donation ','Latest Donation','Latest Donation Date','Largest Donation','Snapshot: Latest Donation','Snapshot: Latest Donation Date','Snapshot: Largest Donation','Snapshot: YTD donation summary','Snapshot: Last Year donation summary','Snapshot: 2 Years ago donation summary','Snapshot: 3 Years ago donation summary','Snapshot: 4 Years ago donation summary','2025','2024','2023','2022','2021','Primary Contact: Name','Primary Contact: Contact ID','Secondary Contact: Name','Secondary Contact: Contact ID','Primary Contact: Email','Primary Contact: Mobile Phone','Secondary Contact: Email','Secondary Contact: Mobile Phone','Primary Contact: Personal Notes','Primary Contact: Notes','Primary Contact: Description','Secondary Contact: Personal Notes','Secondary Contact: Notes','Secondary Contact: Description','Primary  Last Activity','Primary Last Activity','Street','City','State','Postal Code','Event (Primary Contact)',' Event Date (Primary Contact)','Event (Secondary Contact)','Event Date (Secondary Contact)','Capitol Campaign','YK Appeal','Chai Club? - included in total. Not done for everyone','Kiddush Sponsor']);
 const CHEERS=['Great work! Keep going! 💪','You\'re on fire! 🔥','Every call counts! ✨','Making a difference! 🌟','That\'s what it\'s about! 🙌','Yasher koach! 🏆','Keep the momentum! 🚀','One step closer! ⭐'];
 const HEBREW_RESULT='לא עליך המלאכה לגמור';
 const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
@@ -691,6 +692,8 @@ function parseDonorRow(row){
     pPhone:str(get('Primary Contact: Mobile Phone')),sPhone:str(get('Secondary Contact: Mobile Phone')),homePhone:str(get('Account Phone')),
     pEmail:str(get('Primary Contact: Email')),sEmail:str(get('Secondary Contact: Email')),
     pId:pid,sId:str(get('Secondary Contact: Contact ID')),
+    pNotes:str(get('Primary Contact: Personal Notes','Primary Contact: Notes','Primary Contact: Description')),
+    sNotes:str(get('Secondary Contact: Personal Notes','Secondary Contact: Notes','Secondary Contact: Description')),
     high,medium:money('Medium'),low:money('Low'),target:high,
     actual,latestDonation:money('Snapshot: Latest Donation','Latest Donation ','Latest Donation'),
     latestDate:fmtDate(get('Snapshot: Latest Donation Date','Latest Donation Date')),largestDonation:money('Snapshot: Largest Donation','Largest Donation'),
@@ -758,7 +761,7 @@ function applyImport(list){
       p.high=p.high||ex.high||0;p.medium=p.medium||ex.medium||0;p.low=p.low||ex.low||0;p.target=ex.target||p.high||0;
       p.actual=p.actual||ex.actual||0;
       p.tier=(p.tier&&p.tier!=='general')?p.tier:(ex.tier||'general');
-      p.notes=p.notes||ex.notes||'';p.askMonthly=p.askMonthly==null?ex.askMonthly:p.askMonthly;p.prevMonthly=p.prevMonthly==null?ex.prevMonthly:p.prevMonthly;p.askNotes=p.askNotes||ex.askNotes||'';
+      p.notes=p.notes||ex.notes||'';p.pNotes=p.pNotes||ex.pNotes||'';p.sNotes=p.sNotes||ex.sNotes||'';p.askMonthly=p.askMonthly==null?ex.askMonthly:p.askMonthly;p.prevMonthly=p.prevMonthly==null?ex.prevMonthly:p.prevMonthly;p.askNotes=p.askNotes||ex.askNotes||'';
       p.chaiClub=ex.chaiClub;p.chaiMonthly=ex.chaiMonthly;p.chaiAnnual=ex.chaiAnnual;
       p.custom=Object.assign({},ex.custom||{},p.custom||{});}});
   setStatus('saving');
@@ -769,7 +772,7 @@ function applyImport(list){
 }
 
 // Friendly names for how each spreadsheet column maps into the app (shown in the import wizard).
-const IMPORT_FIELD_MAP={'Name':'Household name','Account ID':'Household match key','Household: Account ID':'Household match key','Primary Contact: Name':'Primary name','Secondary Contact: Name':'Secondary name','Primary Contact: Contact ID':'Primary match key','Secondary Contact: Contact ID':'Secondary ID','Primary Contact: Email':'Primary email','Secondary Contact: Email':'Secondary email','Primary Contact: Mobile Phone':'Primary phone','Secondary Contact: Mobile Phone':'Secondary phone','Account Phone':'Home phone','Street':'Street','City':'City','State':'State','Postal Code':'Zip','Snapshot: Latest Donation':'Latest donation','Latest Donation':'Latest donation','Latest Donation ':'Latest donation','Snapshot: Latest Donation Date':'Latest date','Latest Donation Date':'Latest date','Snapshot: Largest Donation':'Largest donation','Largest Donation':'Largest donation','Snapshot: YTD donation summary':'Giving: this year (YTD)','Snapshot: Last Year donation summary':'Giving: last year','Snapshot: 2 Years ago donation summary':'Giving: 2 years ago','Snapshot: 3 Years ago donation summary':'Giving: 3 years ago','Snapshot: 4 Years ago donation summary':'Giving: 4 years ago','High':'Ask: High','Medium':'Ask: Medium','Low':'Ask: Low','Tier':'Tier','Actual':'Last Year','Amb.':'Notes','2021':'Giving 2021','2022':'Giving 2022','2023':'Giving 2023','2024':'Giving 2024','2025':'Giving 2025'};
+const IMPORT_FIELD_MAP={'Name':'Household name','Account ID':'Household match key','Household: Account ID':'Household match key','Primary Contact: Name':'Primary name','Secondary Contact: Name':'Secondary name','Primary Contact: Contact ID':'Primary match key','Secondary Contact: Contact ID':'Secondary ID','Primary Contact: Email':'Primary email','Secondary Contact: Email':'Secondary email','Primary Contact: Personal Notes':'Primary notes','Primary Contact: Notes':'Primary notes','Primary Contact: Description':'Primary notes','Secondary Contact: Personal Notes':'Secondary notes','Secondary Contact: Notes':'Secondary notes','Secondary Contact: Description':'Secondary notes','Primary Contact: Mobile Phone':'Primary phone','Secondary Contact: Mobile Phone':'Secondary phone','Account Phone':'Home phone','Street':'Street','City':'City','State':'State','Postal Code':'Zip','Snapshot: Latest Donation':'Latest donation','Latest Donation':'Latest donation','Latest Donation ':'Latest donation','Snapshot: Latest Donation Date':'Latest date','Latest Donation Date':'Latest date','Snapshot: Largest Donation':'Largest donation','Largest Donation':'Largest donation','Snapshot: YTD donation summary':'Giving: this year (YTD)','Snapshot: Last Year donation summary':'Giving: last year','Snapshot: 2 Years ago donation summary':'Giving: 2 years ago','Snapshot: 3 Years ago donation summary':'Giving: 3 years ago','Snapshot: 4 Years ago donation summary':'Giving: 4 years ago','High':'Ask: High','Medium':'Ask: Medium','Low':'Ask: Low','Tier':'Tier','Actual':'Last Year','Amb.':'Notes','2021':'Giving 2021','2022':'Giving 2022','2023':'Giving 2023','2024':'Giving 2024','2025':'Giving 2025'};
 
 // Two-step import: (1) preview how columns map, (2) choose who to import.
 function showImportWizard({headers,valid,issues,statuses}){
@@ -1159,8 +1162,12 @@ function renderDetail(id){
       ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
       ${(d.street||d.city||d.state||d.zip)?`<div class="subhd" style="margin:9px 0 3px;">ADDRESS</div><a class="clink" href="https://maps.google.com/?q=${encodeURIComponent([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}" target="_blank" rel="noopener">📍 ${esc([d.street,d.city,d.state,d.zip].filter(Boolean).join(', '))}</a>`:''}
       ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone||d.street||d.city)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
-      <label class="field-lbl" style="margin-top:11px;">Notes</label>
-      <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:66px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
+      <label class="field-lbl" style="margin-top:11px;display:flex;align-items:center;gap:7px;">Personal notes — ${esc(d.pName||'Primary')} <span class="sf-tag">⇄ Salesforce</span></label>
+      <textarea class="inp" id="pnotes-inp" placeholder="Personal notes for the primary contact…" style="width:100%;min-height:52px;resize:vertical;line-height:1.5;">${esc(d.pNotes||'')}</textarea>
+      ${d.sName?`<label class="field-lbl" style="margin-top:9px;display:flex;align-items:center;gap:7px;">Personal notes — ${esc(d.sName)} <span class="sf-tag">⇄ Salesforce</span></label>
+      <textarea class="inp" id="snotes-inp" placeholder="Personal notes for the secondary contact…" style="width:100%;min-height:52px;resize:vertical;line-height:1.5;">${esc(d.sNotes||'')}</textarea>`:''}
+      <label class="field-lbl" style="margin-top:11px;">Household notes</label>
+      <textarea class="inp" id="notes-inp" placeholder="Add notes about this household…" style="width:100%;min-height:60px;resize:vertical;line-height:1.5;">${esc(d.notes||'')}</textarea>
     </div>
     ${accessCard}
     <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><button class="coll-toggle" id="profile-toggle" style="flex:1;text-align:left;">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})</button><button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button></div>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`:''}</div>
@@ -1277,6 +1284,12 @@ function showPullLastYear(){
   document.getElementById('pull-cancel').onclick=()=>m.remove();
   m.querySelectorAll('[data-pull-src]').forEach(b=>b.onclick=()=>{m.remove();pullLastYearFrom(b.dataset.pullSrc);});
 }
+function clearAllLastYear(){
+  const cur=campaignDonors();
+  if(!confirm(`Clear the "Last Year" amount for all ${cur.length} contact${cur.length!==1?'s':''} in this campaign?\n\n(A backup is saved automatically, and you can re-fill from a past campaign anytime.)`))return;
+  cur.forEach(c=>{if((c.actual||0)!==0)updateDonor(c.id,{actual:0});});
+  render();
+}
 function pullLastYearFrom(srcId){
   const src=campaigns.find(c=>c.id===srcId);if(!src)return;
   const srcContacts=donors.filter(d=>d.campaignId===srcId);
@@ -1309,7 +1322,7 @@ function renderPlan(){
       <div class="plan-goal-row"><span class="plan-goal-cur">$</span><input id="plan-goal-inp" type="number" inputmode="numeric" value="${s.goal||''}" placeholder="Set your goal…"/></div>
       ${s.committed>0?`<div class="plan-goal-foot">${fmt(s.committed)} already committed by ${s.nCommitted} ${s.nCommitted===1?'person':'people'} — this counts toward every scenario below.</div>`:''}
     </div>
-    <button class="savebtn alt" id="pull-lastyear-btn" style="margin-bottom:13px;">↩ Pull "Last Year" amounts from a past campaign</button>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-bottom:13px;"><button class="savebtn alt" id="pull-lastyear-btn" style="flex:1;min-width:180px;">↩ Pull "Last Year" from a past campaign</button><button class="savebtn alt" id="clear-lastyear-btn" style="flex:0 1 auto;">🧹 Clear all "Last Year"</button></div>
     <div class="card">
       <div class="ctitle">If everyone gives their…</div>
       ${scenarioBarHTML('low','🔵 Low',s.low,s.goal,'var(--brand)')}
@@ -1683,6 +1696,7 @@ function attachEvents(){
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
   document.getElementById('pull-lastyear-btn')?.addEventListener('click',showPullLastYear);
+  document.getElementById('clear-lastyear-btn')?.addEventListener('click',clearAllLastYear);
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
   document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
@@ -1738,6 +1752,8 @@ function attachEvents(){
   document.getElementById('prevmonthly-inp')?.addEventListener('change',e=>{const raw=e.target.value.trim();updateDonor(activeDetailId,{prevMonthly:raw===''?null:(parseFloat(raw)||0)});});
   document.getElementById('asknotes-inp')?.addEventListener('change',e=>{updateDonor(activeDetailId,{askNotes:e.target.value});});
   document.getElementById('notes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{notes:e.target.value});});
+  document.getElementById('pnotes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{pNotes:e.target.value});});
+  document.getElementById('snotes-inp')?.addEventListener('input',e=>{updateDonor(activeDetailId,{sNotes:e.target.value});});
   const savePledgeAmt=()=>{const v=parseFloat(document.getElementById('pledge-amt')?.value)||0;const d=getDonor(activeDetailId);if(!d)return;const ch={pledgeAmount:v};if(v>0&&(d.preArcStage||0)<4)ch.preArcStage=4;updateDonor(activeDetailId,ch);render();};
   document.getElementById('pledge-amt')?.addEventListener('change',savePledgeAmt);
   document.getElementById('pledge-amt-save')?.addEventListener('click',savePledgeAmt);
