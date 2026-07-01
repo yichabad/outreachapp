@@ -434,6 +434,7 @@ app.get('/api/state', (req, res) => {
     dash,
     campaigns: db.campaigns,
     users: db.users.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
+    sfConnected: !!(db.meta.salesforce && db.meta.salesforce.refreshToken),
   });
 });
 
@@ -688,6 +689,7 @@ app.get('/api/sf/status', (req, res) => {
     connectedAt: sf ? sf.connectedAt : null,
     connectedBy: sf ? sf.connectedByName : null,
     user: sf ? sf.userInfo : null,
+    lastPullAt: db.meta.sfLastPullAt || null,
   });
 });
 

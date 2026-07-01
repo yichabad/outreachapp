@@ -574,7 +574,7 @@ function api(path,opts){
 }
 
 // ── STATE ─────────────────────────────────────────────────────────
-let currentUser=null, allUsers=[];
+let currentUser=null, allUsers=[], sfConnected=false;
 let donors=[], settings=defaultSettings();
 let campaigns=[], activeCampaignId=null;
 let dashState={day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
@@ -1631,8 +1631,19 @@ function showEditContacts(id){
   document.getElementById('ec-cancel').onclick=()=>m.remove();
   document.getElementById('ec-save').onclick=()=>{
     const g=eid=>document.getElementById(eid).value.trim();
-    updateDonor(id,{pName:g('ec-pn'),pPhone:g('ec-pp'),pEmail:g('ec-pe'),pNotes:g('ec-pnotes'),sName:g('ec-sn'),sPhone:g('ec-sp'),sEmail:g('ec-se'),sNotes:g('ec-snotes')});
-    m.remove();render();
+    const nv={pName:g('ec-pn'),pPhone:g('ec-pp'),pEmail:g('ec-pe'),pNotes:g('ec-pnotes'),sName:g('ec-sn'),sPhone:g('ec-sp'),sEmail:g('ec-se'),sNotes:g('ec-snotes')};
+    // Diff against current values so we can push exactly what changed to Salesforce.
+    const map=[['p','Name','pName'],['p','Mobile','pPhone'],['p','Email','pEmail'],['p','Personal notes','pNotes'],['s','Name','sName'],['s','Mobile','sPhone'],['s','Email','sEmail'],['s','Personal notes','sNotes']];
+    const changes=[];map.forEach(([person,field,f])=>{const o=d[f]||'',n=nv[f]||'';if(o!==n)changes.push({person,field,old:o,new:n});});
+    updateDonor(id,nv);m.remove();render();
+    // Push to Salesforce only for people who have a Salesforce id.
+    const pushable=sfConnected?changes.filter(ch=>ch.person==='p'?d.pId:d.sId):[];
+    if(pushable.length){
+      setStatus('saving');
+      api('/sf/push-contact',{method:'POST',body:JSON.stringify({contactId:id,changes:pushable})})
+        .then(()=>setStatus('saved'))
+        .catch(err=>{if(err.code!==401){setStatus('offline');alert('Saved in the app, but updating Salesforce failed:\n'+err.message);}});
+    }
   };
 }
 // Edit a logged interaction (type / who / date / note).
@@ -2226,6 +2237,7 @@ function renderReset(){
 async function loadState(){
   const s=await api('/state');
   currentUser=s.me;allUsers=s.users||[];
+  sfConnected=!!s.sfConnected;
   donors=s.contacts||[];
   settings=Object.assign(defaultSettings(),s.settings||{});
   campaigns=s.campaigns||[];
@@ -2236,18 +2248,51 @@ async function loadState(){
   writeCache();
 }
 const BACKUP_REASONS={'before-import':'before an import','before-restore':'before a restore','before-campaign-delete':'before deleting a campaign','auto':'auto-save'};
+function showSfChanges(){
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet" style="max-width:760px;"><div class="mtitle">Salesforce Change Report</div>
+    <div class="msub" id="scr-sub">Loading…</div>
+    <div style="margin:8px 0 10px;"><a class="chip" href="${APP_BASE}/api/sf/changes.csv">⬇ Download CSV</a></div>
+    <div id="scr-body" style="max-height:60vh;overflow:auto;font-size:12px;"></div>
+    <div class="mrow"><button class="mbtn s" id="scr-close">Close</button></div></div>`;
+  document.body.appendChild(m);
+  m.addEventListener('click',e=>{if(e.target===m)m.remove();});
+  document.getElementById('scr-close').onclick=()=>m.remove();
+  const dir=d=>d==='app→sf'?'<span style="color:var(--brand);font-weight:700;">App → SF</span>':'<span style="color:var(--emer);font-weight:700;">SF → App</span>';
+  api('/sf/changes?limit=500').then(r=>{
+    document.getElementById('scr-sub').textContent=(r.total||0)+' change'+(r.total===1?'':'s')+' recorded'+((r.total||0)>500?' (showing latest 500)':'');
+    const rows=(r.changes||[]).map(l=>`<tr style="border-bottom:1px solid var(--border);"><td style="padding:5px 6px;white-space:nowrap;color:var(--text-3);">${esc(new Date(l.at).toLocaleString())}</td><td style="padding:5px 6px;white-space:nowrap;">${dir(l.direction)}</td><td style="padding:5px 6px;">${esc(l.contactName||'')}<div style="color:var(--text-3);font-size:10.5px;">${esc(l.person||'')} · ${esc(l.field||'')}</div></td><td style="padding:5px 6px;"><span style="color:var(--text-3);">${esc(l.old||'—')}</span> → <b>${esc(l.new||'—')}</b></td><td style="padding:5px 6px;white-space:nowrap;color:var(--text-3);">${esc(l.by||'')}</td></tr>`).join('');
+    document.getElementById('scr-body').innerHTML=rows?`<table style="width:100%;border-collapse:collapse;"><thead><tr style="text-align:left;color:var(--text-3);position:sticky;top:0;background:var(--surface);"><th style="padding:5px 6px;">When</th><th style="padding:5px 6px;">Direction</th><th style="padding:5px 6px;">Household / field</th><th style="padding:5px 6px;">Change</th><th style="padding:5px 6px;">By</th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="bin-empty">No changes recorded yet.</div>';
+  }).catch(err=>{if(err.code!==401)document.getElementById('scr-body').innerHTML='<div class="bin-empty">Could not load the change report.</div>';});
+}
 function loadSfStatus(){
   const el=document.getElementById('sf-card');if(!el)return;
   api('/sf/status').then(s=>{
     if(!s.configured){el.innerHTML='<div style="font-size:13px;color:var(--text-2);line-height:1.5;">Salesforce isn’t set up on the server yet.</div>';return;}
     if(s.connected){
       const who=s.user?`${esc(s.user.name||'')}${s.user.username?' · '+esc(s.user.username):''}`:'';
+      const last=s.lastPullAt?new Date(s.lastPullAt).toLocaleString():'never';
       el.innerHTML=`<div class="ctitle" style="color:var(--emer);">✅ Connected to Salesforce</div>
         <div style="font-size:12.5px;color:var(--text-3);margin:4px 0 12px;line-height:1.5;">${who?('Signed in as '+who+'<br>'):''}${s.instanceUrl?'Org: '+esc(s.instanceUrl):''}${s.connectedBy?'<br>Connected by '+esc(s.connectedBy):''}</div>
+        <div class="shead" style="margin-top:2px;">Contact info sync (two-way)</div>
+        <div style="font-size:12px;color:var(--text-3);margin:2px 0 10px;line-height:1.5;">Names, mobiles, emails &amp; personal notes. Editing a household here updates Salesforce right away; Salesforce edits pull in automatically every day.<br>Last pulled: <b>${esc(last)}</b></div>
+        <button class="savebtn" id="sf-pull">⟳ Pull contact info from Salesforce now</button>
+        <button class="savebtn alt" id="sf-changes" style="margin-top:9px;">📋 View change report</button>
+        <div id="sf-pull-out" style="font-size:12.5px;margin-top:10px;line-height:1.5;"></div>
+        <div class="shead" style="margin-top:14px;">Connection</div>
         <button class="savebtn alt" id="sf-test">Test connection</button>
         <button class="savebtn" id="sf-disconnect" style="margin-top:9px;">Disconnect</button>
         <div id="sf-test-out" style="font-size:12.5px;margin-top:10px;line-height:1.5;"></div>`;
-      document.getElementById('sf-test').onclick=()=>{const o=document.getElementById('sf-test-out');o.textContent='Testing…';api('/sf/test',{method:'POST'}).then(r=>{o.innerHTML=`<span style="color:var(--emer);font-weight:700;">✓ Working</span> (API v${esc(r.apiVersion)}) — ${r.accounts} households, ${r.contacts} contacts${r.wonOpportunities!=null?', '+r.wonOpportunities+' donations':''} in Salesforce.`;}).catch(err=>{if(err.code!==401)o.innerHTML='<span style="color:var(--red);">'+esc(err.message)+'</span>';});};
+      document.getElementById('sf-pull').onclick=()=>{
+        if(!confirm('Pull the latest names, mobiles, emails and notes from Salesforce into the app?\n\nWhere they differ, app values are updated to match Salesforce. Every change is recorded in the report.'))return;
+        const o=document.getElementById('sf-pull-out');o.textContent='Syncing from Salesforce… (this can take a minute)';
+        api('/sf/pull-contacts',{method:'POST',body:JSON.stringify({})}).then(async r=>{
+          o.innerHTML='<span style="color:var(--emer);font-weight:700;">✓ Synced</span> — '+r.changes+' change'+(r.changes===1?'':'s')+' across '+r.scanned+' households.';
+          await loadState();render();loadSfStatus();
+        }).catch(err=>{if(err.code!==401)o.innerHTML='<span style="color:var(--red);">'+esc(err.message)+'</span>';});
+      };
+      document.getElementById('sf-changes').onclick=showSfChanges;
+      document.getElementById('sf-test').onclick=()=>{const o=document.getElementById('sf-test-out');o.textContent='Testing…';api('/sf/test',{method:'POST'}).then(r=>{o.innerHTML=`<span style="color:var(--emer);font-weight:700;">✓ Working</span> (API v${esc(r.apiVersion)}) — ${r.accounts} households, ${r.contacts} contacts in Salesforce.`;}).catch(err=>{if(err.code!==401)o.innerHTML='<span style="color:var(--red);">'+esc(err.message)+'</span>';});};
       document.getElementById('sf-disconnect').onclick=()=>{if(!confirm('Disconnect Salesforce? Syncing will stop until you reconnect.'))return;api('/sf/disconnect',{method:'POST'}).then(()=>loadSfStatus()).catch(err=>{if(err.code!==401)alert(err.message);});};
     }else{
       el.innerHTML=`<div style="font-size:12.5px;color:var(--text-3);margin:0 0 12px;line-height:1.5;">Connect the app to your Salesforce org to sync donations and interactions.</div>
