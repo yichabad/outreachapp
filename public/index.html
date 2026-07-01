@@ -715,7 +715,13 @@ function handleFile(file){
         if(ex){p.id=ex.id;p.campaignId=ex.campaignId;p.interactions=ex.interactions;p.tasks=ex.tasks;p.preArcStage=ex.preArcStage;p.postArcStage=ex.postArcStage;
           p.pledgeAmount=ex.pledgeAmount;p.pledgePaid=ex.pledgePaid;p.pledgePlan=ex.pledgePlan||'';
           p.pledgePlanNote=ex.pledgePlanNote||'';p.payments=ex.payments||[];p.status=ex.status;
-          p.target=ex.target;p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;}});
+          p.retailTarget=ex.retailTarget;p.wholesaleTarget=ex.wholesaleTarget;
+          // App-managed fields: use the file's value when it HAS one, otherwise keep what's already in the app — never blank it.
+          p.high=p.high||ex.high||0;p.medium=p.medium||ex.medium||0;p.low=p.low||ex.low||0;p.target=ex.target||p.high||0;
+          p.tier=(p.tier&&p.tier!=='general')?p.tier:(ex.tier||'general');
+          p.notes=p.notes||ex.notes||'';
+          p.chaiClub=ex.chaiClub;p.chaiMonthly=ex.chaiMonthly;p.chaiAnnual=ex.chaiAnnual;
+          p.custom=Object.assign({},ex.custom||{},p.custom||{});}});
       setStatus('saving');
       api('/contacts/bulk',{method:'POST',body:JSON.stringify({contacts:valid})})
         .then(res=>{donors=res.contacts||donors;setStatus('saved');writeCache();render();
