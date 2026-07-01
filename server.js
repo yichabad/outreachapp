@@ -214,6 +214,56 @@ function pruneResetTokens() {
   db.meta.resetTokens = (db.meta.resetTokens || []).filter((t) => !t.used && t.exp > Date.now());
 }
 
+// ── SALESFORCE (OAuth2 Authorization Code + PKCE, no client secret) ──────────
+const SF_CLIENT_ID = process.env.SF_CLIENT_ID || '';
+const SF_LOGIN_URL = (process.env.SF_LOGIN_URL || 'https://login.salesforce.com').replace(/\/+$/, '');
+const SF_SCOPES = process.env.SF_SCOPES || 'api refresh_token';
+const sfPending = new Map(); // state -> { verifier, exp, userId }
+function b64url(buf) { return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); }
+function sfConfigured() { return !!SF_CLIENT_ID; }
+function sfRedirectUri(req) { return publicBaseUrl(req) + '/api/sf/callback'; }
+async function sfPostToken(base, params) {
+  const r = await fetch(base + '/services/oauth2/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(params).toString(),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error_description || data.error || ('token HTTP ' + r.status));
+  return data;
+}
+async function sfRefresh() {
+  const sf = db.meta.salesforce;
+  if (!sf || !sf.refreshToken) throw new Error('Salesforce not connected');
+  const data = await sfPostToken(sf.instanceUrl || SF_LOGIN_URL, {
+    grant_type: 'refresh_token', client_id: SF_CLIENT_ID, refresh_token: sf.refreshToken,
+  });
+  sf.accessToken = data.access_token;
+  if (data.instance_url) sf.instanceUrl = data.instance_url;
+  sf.issuedAt = Date.now();
+  persist();
+  return sf.accessToken;
+}
+// Authenticated Salesforce REST call; auto-refreshes the token once on 401.
+async function sfApi(path, opts = {}, _retry = true) {
+  const sf = db.meta.salesforce;
+  if (!sf || !sf.accessToken) throw new Error('Salesforce not connected');
+  const url = path.startsWith('http') ? path : sf.instanceUrl + path;
+  const r = await fetch(url, Object.assign({}, opts, {
+    headers: Object.assign({ Authorization: 'Bearer ' + sf.accessToken, 'Content-Type': 'application/json' }, opts.headers || {}),
+  }));
+  if (r.status === 401 && _retry) { await sfRefresh(); return sfApi(path, opts, false); }
+  const data = await r.json().catch(() => null);
+  if (!r.ok) {
+    const msg = (data && (Array.isArray(data) ? data[0] && data[0].message : (data.message || data.error_description))) || ('Salesforce HTTP ' + r.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+async function sfApiVersion() {
+  const v = await sfApi('/services/data/');
+  return (Array.isArray(v) && v.length) ? v[v.length - 1].version : '60.0';
+}
+
 function canSee(user, contact) {
   return user.role === 'admin'
     || contact.ownerId === user.id
@@ -625,6 +675,94 @@ app.put('/api/me/security', (req, res) => {
   req.user.securityQuestion = question; req.user.secSalt = rec.salt; req.user.secHash = rec.hash;
   persist();
   res.json({ ok: true, user: safeUser(req.user) });
+});
+
+// ── SALESFORCE CONNECTION (admin) ──────────────────────────────────────────
+app.get('/api/sf/status', (req, res) => {
+  const sf = db.meta.salesforce;
+  res.json({
+    configured: sfConfigured(),
+    connected: !!(sf && sf.refreshToken),
+    instanceUrl: sf ? sf.instanceUrl : null,
+    connectedAt: sf ? sf.connectedAt : null,
+    connectedBy: sf ? sf.connectedByName : null,
+    user: sf ? sf.userInfo : null,
+  });
+});
+
+// Start the OAuth PKCE flow — redirects the admin's browser to Salesforce.
+app.get('/api/sf/connect', requireAdmin, (req, res) => {
+  if (!sfConfigured()) return res.status(400).send('Salesforce is not configured yet (missing Consumer Key).');
+  for (const [k, v] of sfPending) { if (v.exp < Date.now()) sfPending.delete(k); }
+  const verifier = b64url(crypto.randomBytes(64));
+  const challenge = b64url(crypto.createHash('sha256').update(verifier).digest());
+  const state = b64url(crypto.randomBytes(16));
+  sfPending.set(state, { verifier, exp: Date.now() + 10 * 60 * 1000, userId: req.user.id });
+  const u = new URL(SF_LOGIN_URL + '/services/oauth2/authorize');
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('client_id', SF_CLIENT_ID);
+  u.searchParams.set('redirect_uri', sfRedirectUri(req));
+  u.searchParams.set('scope', SF_SCOPES);
+  u.searchParams.set('code_challenge', challenge);
+  u.searchParams.set('code_challenge_method', 'S256');
+  u.searchParams.set('state', state);
+  u.searchParams.set('prompt', 'login');
+  res.redirect(u.toString());
+});
+
+// OAuth redirect target — exchange the code, store tokens, bounce back to the app.
+app.get('/api/sf/callback', async (req, res) => {
+  const base = publicBaseUrl(req);
+  try {
+    if (req.query.error) throw new Error(req.query.error_description || req.query.error);
+    const state = String(req.query.state || '');
+    const pend = sfPending.get(state);
+    if (!pend || pend.exp < Date.now()) throw new Error('This connection attempt expired — please try again.');
+    sfPending.delete(state);
+    const tok = await sfPostToken(SF_LOGIN_URL, {
+      grant_type: 'authorization_code', code: String(req.query.code || ''),
+      client_id: SF_CLIENT_ID, redirect_uri: sfRedirectUri(req), code_verifier: pend.verifier,
+    });
+    let userInfo = null;
+    try {
+      if (tok.id) {
+        const idr = await fetch(tok.id, { headers: { Authorization: 'Bearer ' + tok.access_token } });
+        if (idr.ok) { const j = await idr.json(); userInfo = { name: j.display_name, username: j.username, email: j.email, orgId: j.organization_id }; }
+      }
+    } catch {}
+    const connector = userById(pend.userId);
+    db.meta.salesforce = {
+      accessToken: tok.access_token, refreshToken: tok.refresh_token, instanceUrl: tok.instance_url,
+      idUrl: tok.id, issuedAt: Date.now(), connectedAt: Date.now(),
+      connectedById: pend.userId, connectedByName: connector ? connector.name : '', userInfo,
+    };
+    persist();
+    res.redirect(base + '/?sf=connected');
+  } catch (e) {
+    console.error('[sf] callback error:', e.message);
+    res.redirect(base + '/?sf=error&msg=' + encodeURIComponent(e.message));
+  }
+});
+
+app.post('/api/sf/disconnect', requireAdmin, (req, res) => {
+  db.meta.salesforce = null;
+  persist();
+  res.json({ ok: true });
+});
+
+// Read-only sanity check that the connection works.
+app.post('/api/sf/test', requireAdmin, async (req, res) => {
+  try {
+    const version = await sfApiVersion();
+    const q = (soql) => sfApi('/services/data/v' + version + '/query/?q=' + encodeURIComponent(soql));
+    const accounts = await q('SELECT COUNT() FROM Account');
+    const contacts = await q('SELECT COUNT() FROM Contact');
+    let opps = null;
+    try { opps = (await q('SELECT COUNT() FROM Opportunity WHERE IsWon = true')).totalSize; } catch {}
+    res.json({ ok: true, apiVersion: version, accounts: accounts.totalSize, contacts: contacts.totalSize, wonOpportunities: opps });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
 });
 
 // ── ADMIN: USER MANAGEMENT ────────────────────────────────────────────────────

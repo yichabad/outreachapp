@@ -1391,6 +1391,8 @@ function renderSettings(){
       <button class="savebtn alt" onclick="showChangePasswordModal()">Change my password</button>
       <button class="savebtn alt" style="margin-top:9px;" onclick="showSecurityModal()">${currentUser&&currentUser.hasSecurityQuestion?'Update security question ✓':'⚠️ Set up security question'}</button>
     </div>
+    ${currentUser&&currentUser.role==='admin'?`<div class="shead">Salesforce</div>
+    <div class="card" id="sf-card"><div class="bin-empty">Loading…</div></div>`:''}
     <div class="shead">Default Touchpoints by Tier</div>
     <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Applies to newly imported donors. Override per donor.</p>
     ${TIERS.map(t=>`<div class="card"><div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">${TIER_CFG[t].label}</div>
@@ -1879,6 +1881,7 @@ function attachEvents(){
   document.getElementById('fin-btn')?.addEventListener('click',exportFinancial);
   document.getElementById('sample-btn')?.addEventListener('click',downloadSample);
   if(document.getElementById('backup-list'))loadBackups();
+  if(document.getElementById('sf-card'))loadSfStatus();
   document.getElementById('reset-all-btn')?.addEventListener('click',resetAllData);
 
   // Admin
@@ -2233,6 +2236,26 @@ async function loadState(){
   writeCache();
 }
 const BACKUP_REASONS={'before-import':'before an import','before-restore':'before a restore','before-campaign-delete':'before deleting a campaign','auto':'auto-save'};
+function loadSfStatus(){
+  const el=document.getElementById('sf-card');if(!el)return;
+  api('/sf/status').then(s=>{
+    if(!s.configured){el.innerHTML='<div style="font-size:13px;color:var(--text-2);line-height:1.5;">Salesforce isn’t set up on the server yet.</div>';return;}
+    if(s.connected){
+      const who=s.user?`${esc(s.user.name||'')}${s.user.username?' · '+esc(s.user.username):''}`:'';
+      el.innerHTML=`<div class="ctitle" style="color:var(--emer);">✅ Connected to Salesforce</div>
+        <div style="font-size:12.5px;color:var(--text-3);margin:4px 0 12px;line-height:1.5;">${who?('Signed in as '+who+'<br>'):''}${s.instanceUrl?'Org: '+esc(s.instanceUrl):''}${s.connectedBy?'<br>Connected by '+esc(s.connectedBy):''}</div>
+        <button class="savebtn alt" id="sf-test">Test connection</button>
+        <button class="savebtn" id="sf-disconnect" style="margin-top:9px;">Disconnect</button>
+        <div id="sf-test-out" style="font-size:12.5px;margin-top:10px;line-height:1.5;"></div>`;
+      document.getElementById('sf-test').onclick=()=>{const o=document.getElementById('sf-test-out');o.textContent='Testing…';api('/sf/test',{method:'POST'}).then(r=>{o.innerHTML=`<span style="color:var(--emer);font-weight:700;">✓ Working</span> (API v${esc(r.apiVersion)}) — ${r.accounts} households, ${r.contacts} contacts${r.wonOpportunities!=null?', '+r.wonOpportunities+' donations':''} in Salesforce.`;}).catch(err=>{if(err.code!==401)o.innerHTML='<span style="color:var(--red);">'+esc(err.message)+'</span>';});};
+      document.getElementById('sf-disconnect').onclick=()=>{if(!confirm('Disconnect Salesforce? Syncing will stop until you reconnect.'))return;api('/sf/disconnect',{method:'POST'}).then(()=>loadSfStatus()).catch(err=>{if(err.code!==401)alert(err.message);});};
+    }else{
+      el.innerHTML=`<div style="font-size:12.5px;color:var(--text-3);margin:0 0 12px;line-height:1.5;">Connect the app to your Salesforce org to sync donations and interactions.</div>
+        <button class="savebtn" id="sf-connect">🔗 Connect to Salesforce</button>`;
+      document.getElementById('sf-connect').onclick=()=>{location.href=APP_BASE+'/api/sf/connect';};
+    }
+  }).catch(err=>{if(err.code!==401)el.innerHTML='<div class="bin-empty">Could not load Salesforce status.</div>';});
+}
 function loadBackups(){
   api('/backups').then(res=>{
     const el=document.getElementById('backup-list');if(!el)return;
@@ -2258,12 +2281,23 @@ function restoreView(){
   if(v==='admin'&&!(currentUser&&currentUser.role==='admin'))v='dashboard';
   return ok.includes(v)?v:'dashboard';
 }
+function handleSfReturn(){
+  try{
+    const u=new URL(location.href);const sf=u.searchParams.get('sf');if(!sf)return;
+    const msg=u.searchParams.get('msg');
+    u.searchParams.delete('sf');u.searchParams.delete('msg');
+    history.replaceState({},'',u.pathname+(u.search||'')+u.hash);
+    if(sf==='connected'){view='settings';render();setTimeout(()=>alert('✅ Salesforce connected!'),80);}
+    else if(sf==='error'){setTimeout(()=>alert('Salesforce connection failed: '+(msg||'unknown error')),80);}
+  }catch{}
+}
 async function boot(){
   try{
     const me=await api('/me');
     currentUser=me.user;
     await loadState();
     view=restoreView();render();
+    handleSfReturn();
   }catch(e){
     if(e.code===401){return;/* renderLogin already shown by api() */}
     const cache=readCache();
