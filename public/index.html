@@ -1330,7 +1330,7 @@ function renderPlan(){
   const rows=sorted.map(d=>{
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
-      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="number" inputmode="numeric" value="${d[k]||''}" placeholder="—"/></td>`).join('');
+      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${d[k]?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
     const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}">${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
     const arch=canManageContact(d)?`<button class="plan-arch" data-plan-arch="${esc(d.id)}" title="Archive — hides from all lists">🗄 Archive</button>`:'';
     return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td><td class="plan-tiercell">${tierSel}</td>${cells}<td class="plan-act">${arch}</td></tr>`;
@@ -1731,7 +1731,10 @@ function attachEvents(){
 
   // Plan tab — live updates without re-render so focus/scroll are preserved
   document.getElementById('plan-goal-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;settings.campaignGoals=settings.campaignGoals||{};settings.campaignGoals[activeCampaignId]=v;markSettings();updatePlanBars();});
-  document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>inp.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();}));
+  document.querySelectorAll('input[data-plan-tgt]').forEach(inp=>{
+    inp.addEventListener('input',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;updateDonor(e.target.dataset.pid,{[e.target.dataset.planTgt]:v});updatePlanBars();});
+    inp.addEventListener('change',e=>{const v=parseFloat(e.target.value.replace(/,/g,''))||0;e.target.value=v?v.toLocaleString():'';});
+  });
   document.querySelectorAll('[data-plan-arch]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showRemoveOptions(b.dataset.planArch);}));
   document.querySelectorAll('[data-plan-tier]').forEach(sel=>sel.addEventListener('change',e=>{updateDonor(e.target.dataset.planTier,{tier:e.target.value});render();}));
   document.getElementById('pull-lastyear-btn')?.addEventListener('click',showPullLastYear);
