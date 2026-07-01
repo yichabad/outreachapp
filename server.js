@@ -53,6 +53,15 @@ function loadDB() {
   }
   const firstCampaignId = db.campaigns[0].id;
   db.contacts.forEach((c) => { if (!c.campaignId) c.campaignId = firstCampaignId; });
+  // One-time cleanup: before self-service 0-entry existed, blank target fields
+  // were silently saved as 0. Convert those legacy zeros to "unset" so blanks
+  // display as "—". Runs once; deliberate 0s entered afterwards are preserved.
+  if (!db.meta.zeroTargetsCleaned) {
+    db.contacts.forEach((c) => {
+      ['low', 'medium', 'high', 'target', 'actual'].forEach((f) => { if (c[f] === 0) delete c[f]; });
+    });
+    db.meta.zeroTargetsCleaned = true;
+  }
   if (!db.meta.sessionSecret) {
     db.meta.sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
   }
