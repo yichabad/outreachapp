@@ -192,11 +192,13 @@ a{color:inherit;}
 /* ── CARDS ─────────────────────────────────────────────────────── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:16px;margin-bottom:13px;box-shadow:var(--sh-1);}
 .ctitle{font-size:11px;font-weight:700;color:var(--text-3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px;}
-.chead{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-.chead-t{cursor:pointer;user-select:none;flex:1;display:inline-flex;align-items:center;gap:5px;}
-.carrow{color:var(--text-3);font-size:10px;display:inline-block;width:11px;text-align:center;}
+.chead{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;padding:5px 7px;margin:-5px -7px 9px;border-radius:9px;transition:background .12s;}
+.chead:hover{background:var(--surface-2);}
+.chead-t{flex:1;}
+.chead-x{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+.coll-chev{flex-shrink:0;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:800;line-height:1;}
+.card.collapsed .chead{margin-bottom:-5px;}
 .card.collapsed .cbody{display:none;}
-.card.collapsed .ctitle{margin-bottom:0;}
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;text-align:center;margin-bottom:12px;}
 .tcell{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 3px;}
 .tlbl{font-size:9.5px;color:var(--text-3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
@@ -1166,14 +1168,17 @@ function renderList(){
 }
 
 // ── RENDER: DETAIL ─────────────────────────────────────────────────
-// Collapsible section state, remembered per (contact, section). A few sections
-// start collapsed by default; the rest start open. Users can toggle any of them.
-let sectionOpen={};
+// Collapsible section state. A user's choice for a section is remembered as a
+// personal preference and applied to EVERY contact (their preferred layout),
+// persisted in localStorage. A few sections start collapsed by default.
+let sectionPref={};
 const SEC_CLOSED_DEFAULT=new Set(['access','profile','chai','history','remove']);
-function secOpen(did,key){const k=did+'|'+key;return (k in sectionOpen)?!!sectionOpen[k]:!SEC_CLOSED_DEFAULT.has(key);}
+function loadSectionPref(){try{sectionPref=JSON.parse(localStorage.getItem('ot_sections_'+(currentUser&&currentUser.id)))||{};}catch{sectionPref={};}}
+function saveSectionPref(){try{localStorage.setItem('ot_sections_'+(currentUser&&currentUser.id),JSON.stringify(sectionPref));}catch{}}
+function secOpen(key){return (key in sectionPref)?!!sectionPref[key]:!SEC_CLOSED_DEFAULT.has(key);}
 function dcard(did,key,title,body,extra){
-  const open=secOpen(did,key);
-  return `<div class="card${open?'':' collapsed'}"><div class="ctitle chead"><span class="chead-t" data-collhead="${did}|${key}"><span class="carrow">${open?'▾':'▸'}</span>${title}</span>${extra||''}</div><div class="cbody">${body}</div></div>`;
+  const open=secOpen(key);
+  return `<div class="card${open?'':' collapsed'}"><div class="ctitle chead" data-collhead="${key}"><span class="chead-t">${title}</span>${extra?`<span class="chead-x">${extra}</span>`:''}<span class="coll-chev">${open?'▾':'▸'}</span></div><div class="cbody">${body}</div></div>`;
 }
 function renderDetail(id){
   const did=id||detailId;
@@ -1877,12 +1882,15 @@ function attachEvents(){
   // Detail
   const activeDetailId=isDesktop?desktopDetailId:detailId;
   document.getElementById('back-btn')?.addEventListener('click',()=>{view='list';render();});
-  // Collapsible detail sections — toggle in place (no re-render) so focus/scroll survive.
+  // Header action buttons (Edit, etc.) shouldn't toggle the section.
+  document.querySelectorAll('.chead-x').forEach(x=>x.addEventListener('click',e=>e.stopPropagation()));
+  // Collapsible detail sections — a user's choice is a global preference applied to
+  // every contact. Toggle in place (no re-render) so focus/scroll survive.
   document.querySelectorAll('[data-collhead]').forEach(el=>el.addEventListener('click',()=>{
     const k=el.dataset.collhead;const card=el.closest('.card');if(!card)return;
     const next=card.classList.contains('collapsed');
-    sectionOpen[k]=next;card.classList.toggle('collapsed',!next);
-    const ar=el.querySelector('.carrow');if(ar)ar.textContent=next?'▾':'▸';
+    sectionPref[k]=next;saveSectionPref();card.classList.toggle('collapsed',!next);
+    const chev=el.querySelector('.coll-chev');if(chev)chev.textContent=next?'▾':'▸';
   }));
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
   document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
@@ -2209,7 +2217,7 @@ function renderLogin(err){
     const btn=f.querySelector('.login-btn');btn.disabled=true;btn.textContent='Signing in…';
     try{
       const r=await api('/login',{method:'POST',body:JSON.stringify({email,password})});
-      currentUser=r.user;await loadState();view='dashboard';render();
+      currentUser=r.user;await loadState();loadSectionPref();view='dashboard';render();
     }catch(e){
       renderLogin(e.code===401?'Invalid email or password':(e.message||'Sign-in failed'));
     }
@@ -2423,12 +2431,12 @@ async function boot(){
     const me=await api('/me');
     currentUser=me.user;
     await loadState();
-    view=restoreView();restoreDetail();render();
+    loadSectionPref();view=restoreView();restoreDetail();render();
     handleSfReturn();
   }catch(e){
     if(e.code===401){return;/* renderLogin already shown by api() */}
     const cache=readCache();
-    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;campaigns=cache.campaigns||[];activeCampaignId=cache.activeCampaignId||(campaigns[0]&&campaigns[0].id)||null;view=restoreView();restoreDetail();render();setStatus('offline');}
+    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;campaigns=cache.campaigns||[];activeCampaignId=cache.activeCampaignId||(campaigns[0]&&campaigns[0].id)||null;loadSectionPref();view=restoreView();restoreDetail();render();setStatus('offline');}
     else{renderLogin('Could not reach the server. Please try again.');}
   }
 }
