@@ -192,6 +192,11 @@ a{color:inherit;}
 /* ── CARDS ─────────────────────────────────────────────────────── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:16px;margin-bottom:13px;box-shadow:var(--sh-1);}
 .ctitle{font-size:11px;font-weight:700;color:var(--text-3);letter-spacing:.8px;text-transform:uppercase;margin-bottom:12px;}
+.chead{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.chead-t{cursor:pointer;user-select:none;flex:1;display:inline-flex;align-items:center;gap:5px;}
+.carrow{color:var(--text-3);font-size:10px;display:inline-block;width:11px;text-align:center;}
+.card.collapsed .cbody{display:none;}
+.card.collapsed .ctitle{margin-bottom:0;}
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;text-align:center;margin-bottom:12px;}
 .tcell{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:9px 3px;}
 .tlbl{font-size:9.5px;color:var(--text-3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
@@ -294,6 +299,8 @@ a{color:inherit;}
 .tdue.upcoming{color:var(--text-3);}
 .tdel{color:var(--faint);font-size:20px;line-height:1;transition:color .15s;}
 .tdel:hover{color:var(--red);}
+.tacts{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.tdate-inp{font-size:11px;padding:3px 5px;border:1px solid var(--border-2);border-radius:6px;background:var(--surface);color:var(--text-2);font-family:inherit;max-width:132px;}
 
 /* ── HISTORY ───────────────────────────────────────────────────── */
 .hint{border-left:3px solid var(--brand-soft-2);padding-left:13px;margin-bottom:13px;}
@@ -583,7 +590,6 @@ let view='dashboard',detailId=null,listTab='courting',planSort='tier',taskTab='f
 let searchVal='',filterVal='All',sortVal='target';
 let bulkMode=false,bulkSel=new Set(),lastBulkIdx=null;
 let logType=INT_TYPES[0],logSpouse='Primary';
-let profileOpen={};
 let micActive=false,micTarget=null,recognition=null;
 let desktopDetailId=null;
 
@@ -1160,6 +1166,15 @@ function renderList(){
 }
 
 // ── RENDER: DETAIL ─────────────────────────────────────────────────
+// Collapsible section state, remembered per (contact, section). A few sections
+// start collapsed by default; the rest start open. Users can toggle any of them.
+let sectionOpen={};
+const SEC_CLOSED_DEFAULT=new Set(['access','profile','chai','history','remove']);
+function secOpen(did,key){const k=did+'|'+key;return (k in sectionOpen)?!!sectionOpen[k]:!SEC_CLOSED_DEFAULT.has(key);}
+function dcard(did,key,title,body,extra){
+  const open=secOpen(did,key);
+  return `<div class="card${open?'':' collapsed'}"><div class="ctitle chead"><span class="chead-t" data-collhead="${did}|${key}"><span class="carrow">${open?'▾':'▸'}</span>${title}</span>${extra||''}</div><div class="cbody">${body}</div></div>`;
+}
 function renderDetail(id){
   const did=id||detailId;
   const d=getDonor(did);if(!d)return EMPTY_DETAIL;
@@ -1178,25 +1193,22 @@ function renderDetail(id){
     if(t.done){const who=userName(t.doneBy||t.by);const when=t.doneAt?new Date(t.doneAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';return `<div class="tby">✓ ${who?esc(who):'Completed'}${when?' · '+when:''}</div>`;}
     const who=t.by&&t.by!==(currentUser&&currentUser.id)?userName(t.by):'';return who?`<div class="tby">added by ${esc(who)}</div>`:'';
   };
-  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:''}${taskMeta(t)}</div><button class="tdel" data-tdel="${t.id}">×</button></div>`).join('');
+  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:(t.done?'':'<div class="tdue upcoming">No due date</div>')}${taskMeta(t)}</div><div class="tacts">${t.done?'':`<input type="date" class="tdate-inp" data-tdate2="${t.id}" value="${t.due||''}" title="Change due date"/>`}<button class="tdel" data-tdel="${t.id}" title="Delete task">×</button></div></div>`).join('');
   const histHTML=(d.interactions||[]).length===0?'<div style="font-size:13px;color:var(--text-3);">No interactions yet.</div>'
     :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><div class="hactions"><button class="hedit" data-ei="${i.id}" title="Edit">✏️</button><button class="hdel" data-di="${i.id}" title="Delete">×</button></div></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
   const profileFields=[['Latest Donation',fmt(d.latestDonation)],['Latest Date',d.latestDate],['Largest Donation',fmt(d.largestDonation)],...Object.entries(d.years||{}).filter(([,v])=>v).sort((a,b)=>String(b[0]).localeCompare(String(a[0]))).map(([y,v])=>[y,fmt(v)]),...Object.entries(d.custom||{})].filter(([,v])=>v&&v!=='—');
-  const showProfile=profileOpen[did];
   const paymentLog=(d.payments||[]).length>0?`<div style="margin-top:12px;"><div class="subhd">Payment History</div>${[...(d.payments||[])].reverse().map(p=>`<div class="payment-log-item"><span style="font-weight:700;">${fmt(p.amount)}</span><span style="color:var(--text-3);">${fmtDate(p.date)}</span><button style="color:var(--faint);font-size:16px;" data-delpay="${p.id}">×</button></div>`).join('')}</div>`:'';
   // Access card
   const canMng=currentUser&&(currentUser.role==='admin'||d.ownerId===currentUser.id);
   const assignees=(d.assignedUserIds||[]).map(uid=>userName(uid)).filter(Boolean);
   const ownerLabel=d.ownerId?(userName(d.ownerId)||'—'):'—';
-  const accessCard=`<div class="card"><div class="ctitle">Access</div>
-    <div class="access-row"><span class="access-lbl">Owner</span><span class="access-val">${esc(ownerLabel)}${d.ownerId===(currentUser&&currentUser.id)?' (you)':''}</span></div>
+  const accessBody=`<div class="access-row"><span class="access-lbl">Owner</span><span class="access-val">${esc(ownerLabel)}${d.ownerId===(currentUser&&currentUser.id)?' (you)':''}</span></div>
     <div class="access-row"><span class="access-lbl">Shared with</span><span class="access-val">${assignees.length?assignees.map(n=>`<span class="chip-sm">${esc(n)}</span>`).join(''):'<span style="color:var(--text-3);font-weight:500;">No one yet</span>'}</span></div>
-    ${canMng?`<button class="chip" id="assign-btn" style="margin-top:9px;">⚙ Manage access</button>`:''}
-  </div>`;
+    ${canMng?`<button class="chip" id="assign-btn" style="margin-top:9px;">⚙ Manage access</button>`:''}`;
 
   return`<div class="dhdr">${isDesktop?'':'<button class="backbtn" id="back-btn">←</button>'}<div class="dh-main"><div class="dhtitle">${esc(d.name)}</div><div class="dhsub">${esc(d.city)}${d.state?', '+esc(d.state):''}</div></div>${d.chaiClub?'<span class="chai-badge">♾️ Chai Club</span>':''}<span class="tier-badge" style="background:${tc.bg};color:${tc.color};">${tc.label}</span></div>
   <div class="dbody">
-    <div class="card"><div class="ctitle">Ask Amounts</div>
+    ${dcard(did,'ask','Ask Amounts',`
       <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Yr Campaign Commitment</div><input class="tval-inp" data-tgt="actual" type="text" inputmode="numeric" value="${d.actual?Number(d.actual).toLocaleString():''}" placeholder="—"/></div></div>
       <label class="field-lbl" style="margin-top:12px;display:flex;align-items:center;gap:8px;">Monthly giving${d.askMonthly!=null?'<span class="ask-reviewed">✓ reviewed</span>':''}</label>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
@@ -1204,9 +1216,8 @@ function renderDetail(id){
         <div><div class="mini-lbl">Ask this year</div><input class="inp" id="askmonthly-inp" type="number" inputmode="numeric" value="${d.askMonthly==null?'':d.askMonthly}" placeholder="$/mo or 0" style="width:104px;"/><div id="askmonthly-yr" class="mini-yr">${d.askMonthly>0?'= '+fmt(d.askMonthly*12)+' / yr':''}</div></div>
         <div style="flex:1;min-width:100%;"><div class="mini-lbl">Ask notes</div><textarea class="inp" id="asknotes-inp" placeholder="e.g. pledge over 3 yrs, wants a call first…" style="width:100%;min-height:84px;resize:vertical;line-height:1.45;font-family:inherit;">${esc(d.askNotes||'')}</textarea></div>
       </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Enter <b>0</b> for the ask if none — marks it reviewed.</div>
-    </div>
-    <div class="card"><div class="ctitle" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">Household Contacts <span style="display:flex;gap:7px;align-items:center;flex-shrink:0;"><span class="sf-tag">⇄ Salesforce</span><button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></span></div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Enter <b>0</b> for the ask if none — marks it reviewed.</div>`)}
+    ${dcard(did,'contacts','Household Contacts',`
       ${!d.pDeceased&&d.pName?`<div class="subhd" style="margin-bottom:3px;">PRIMARY — ${esc(d.pName)}</div>`:''} ${!d.pDeceased&&d.pPhone?`<a class="clink" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''} ${!d.pDeceased&&d.pEmail?`<a class="clink" href="mailto:${esc(d.pEmail)}" style="font-size:13px;">✉️ ${esc(d.pEmail)}</a>`:''}
       ${!d.sDeceased&&d.sName?`<div class="subhd" style="margin:9px 0 3px;">SECONDARY — ${esc(d.sName)}</div>`:''} ${!d.sDeceased&&d.sPhone?`<a class="clink" href="tel:${esc(d.sPhone)}">📞 ${esc(d.sPhone)}</a>`:''} ${!d.sDeceased&&d.sEmail?`<a class="clink" href="mailto:${esc(d.sEmail)}" style="font-size:13px;">✉️ ${esc(d.sEmail)}</a>`:''}
       ${d.homePhone?`<div class="subhd" style="margin:9px 0 3px;">HOME</div><a class="clink" href="tel:${esc(d.homePhone)}">🏠 ${esc(d.homePhone)}</a>`:''}
@@ -1214,28 +1225,27 @@ function renderDetail(id){
       ${!(d.pName||d.pPhone||d.pEmail||d.sName||d.sPhone||d.sEmail||d.homePhone||d.street||d.city)?`<div style="font-size:13px;color:var(--text-3);">No contact info yet — tap <b>✏️ Edit</b> to add a phone or email.</div>`:''}
       ${!d.pDeceased&&d.pNotes?noteRO('NOTES — '+(d.pName||'Primary'),d.pNotes):''}
       ${!d.sDeceased&&d.sName&&d.sNotes?noteRO('NOTES — '+d.sName,d.sNotes):''}
-      ${(d.pDeceased||d.sDeceased)?`<div style="font-size:11.5px;color:var(--text-3);margin-top:8px;">🕯 ${[d.pDeceased?(d.pName||'Primary'):null,d.sDeceased?(d.sName||'Secondary'):null].filter(Boolean).map(esc).join(', ')} — deceased (hidden)</div>`:''}
-    </div>
-    ${accessCard}
-    <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;"><button class="coll-toggle" id="profile-toggle" style="flex:1;text-align:left;">${showProfile?'▾':'▸'} Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})</button><button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button></div>${showProfile?`<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`:''}</div>
-    <div class="card"><div class="ctitle">Tier</div><div class="chips">${tierBtns}</div>
+      ${(d.pDeceased||d.sDeceased)?`<div style="font-size:11.5px;color:var(--text-3);margin-top:8px;">🕯 ${[d.pDeceased?(d.pName||'Primary'):null,d.sDeceased?(d.sName||'Secondary'):null].filter(Boolean).map(esc).join(', ')} — deceased (hidden)</div>`:''}`,
+      `<span style="display:flex;gap:7px;align-items:center;flex-shrink:0;"><span class="sf-tag">⇄ Salesforce</span><button class="chip" id="edit-contacts-btn" style="font-size:11px;">✏️ Edit</button></span>`)}
+    ${dcard(did,'access','Access',accessBody)}
+    ${dcard(did,'profile',`Donor Profile (${profileFields.length} field${profileFields.length!==1?'s':''})`,
+      `<div class="cf-grid" style="margin-top:10px;">${profileFields.length?profileFields.map(([k,v])=>`<div class="cf-cell"><div class="cf-lbl">${esc(k)}</div><div class="cf-val">${esc(v)}</div></div>`).join(''):'<div style="font-size:13px;color:var(--text-3);">No additional fields yet — tap “Edit fields” to add some.</div>'}</div>`,
+      `<button class="chip" id="edit-fields-btn" style="font-size:11px;flex-shrink:0;">✏️ Edit fields</button>`)}
+    ${dcard(did,'tier','Tier',`<div class="chips">${tierBtns}</div>
       <div style="display:flex;gap:14px;margin-top:13px;">
         <div style="flex:1;"><div class="field-lbl">📞 Retail / yr</div><div class="tp-adj-row"><button class="tadj" data-adj="retail" data-dir="-1">−</button><span class="tcnt" id="ret-disp">${d.retailTarget||1}</span><button class="tadj" data-adj="retail" data-dir="1">+</button></div></div>
         <div style="flex:1;"><div class="field-lbl">📄 Wholesale / yr</div><div class="tp-adj-row"><button class="tadj" data-adj="wholesale" data-dir="-1">−</button><span class="tcnt" id="who-disp">${d.wholesaleTarget||1}</span><button class="tadj" data-adj="wholesale" data-dir="1">+</button></div></div>
-      </div>
-    </div>
-    <div class="card"><div class="ctitle">${isPost?'Appreciation Track':'Campaign Journey'}</div>
+      </div>`)}
+    ${dcard(did,'journey',`${isPost?'Appreciation Track':'Campaign Journey'}`,`
       ${arcHTML(d,true)}
-      ${!isPost?`<button class="chip" id="to-post-btn" style="font-size:11px;margin-top:4px;">✓ Mark as Pledged / Donated</button>`:`<button class="chip" id="to-pre-btn" style="font-size:11px;margin-top:4px;">← Back to Courting track</button>`}
-    </div>
-    <div class="card"><div class="ctitle">♾️ Chai Club / Monthly Giver</div>
+      ${!isPost?`<button class="chip" id="to-post-btn" style="font-size:11px;margin-top:4px;">✓ Mark as Pledged / Donated</button>`:`<button class="chip" id="to-pre-btn" style="font-size:11px;margin-top:4px;">← Back to Courting track</button>`}`)}
+    ${dcard(did,'chai','♾️ Chai Club / Monthly Giver',`
       <label class="chai-toggle"><input type="checkbox" id="chai-toggle" ${d.chaiClub?'checked':''}/><span>Gives monthly — counts as given, no payment tracking needed</span></label>
       ${d.chaiClub?`<div style="margin-top:11px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;color:var(--text-2);flex:1;min-width:110px;">Monthly amount</span><input id="chai-monthly" type="number" value="${d.chaiMonthly||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/></div>
       <div style="margin-top:9px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><span style="font-size:13px;color:var(--text-2);flex:1;min-width:110px;">+ Annual campaign <span style="color:var(--text-3);font-weight:400;">(optional)</span></span><input id="chai-annual" type="number" value="${d.chaiAnnual||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="chai-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></div>
       <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Leave the annual blank for members who commit to the monthly only.</div>
-      <div style="font-size:13px;color:var(--emer);margin-top:10px;font-weight:800;background:var(--emer-soft, #ecfdf5);border-radius:8px;padding:9px 11px;">${(d.chaiAnnual||0)>0?`Pledged for the year: ${fmt((d.chaiMonthly||0)*12+(d.chaiAnnual||0))} <span style="font-weight:600;color:var(--text-2);">(${fmt((d.chaiMonthly||0)*12)} monthly + ${fmt(d.chaiAnnual||0)} annual)</span> · counted as given ✓`:`Pledged for the year: ${fmt((d.chaiMonthly||0)*12)} <span style="font-weight:600;color:var(--text-2);">(${fmt(d.chaiMonthly||0)}/mo × 12)</span> · counted as given ✓`}</div>`:''}
-    </div>
-    ${!d.chaiClub&&((arcStage>=4&&!isPost)||isPledged(d))?`<div class="card"><div class="ctitle">Pledge Details</div>
+      <div style="font-size:13px;color:var(--emer);margin-top:10px;font-weight:800;background:var(--emer-soft, #ecfdf5);border-radius:8px;padding:9px 11px;">${(d.chaiAnnual||0)>0?`Pledged for the year: ${fmt((d.chaiMonthly||0)*12+(d.chaiAnnual||0))} <span style="font-weight:600;color:var(--text-2);">(${fmt((d.chaiMonthly||0)*12)} monthly + ${fmt(d.chaiAnnual||0)} annual)</span> · counted as given ✓`:`Pledged for the year: ${fmt((d.chaiMonthly||0)*12)} <span style="font-weight:600;color:var(--text-2);">(${fmt(d.chaiMonthly||0)}/mo × 12)</span> · counted as given ✓`}</div>`:''}`)}
+    ${!d.chaiClub&&((arcStage>=4&&!isPost)||isPledged(d))?dcard(did,'pledge','Pledge Details',`
       <div class="pledge-box">
         <div class="pledge-row"><span>Pledge Amount</span><span style="display:flex;gap:6px;align-items:center;"><input id="pledge-amt" type="number" value="${d.pledgeAmount||''}" placeholder="$0" style="width:100px;padding:7px 9px;border-radius:8px;border:1.5px solid var(--border-2);text-align:right;background:#fff;"/><button class="savebtn" id="pledge-amt-save" style="width:auto;flex:0;padding:7px 13px;font-size:13px;">Save</button></span></div>
         ${d.pledgeAmount>0?`<div class="tp-bg" style="background:var(--amber-soft);"><div style="background:var(--emer);border-radius:999px;height:7px;width:${pledgePct}%;transition:width .4s;"></div></div>
@@ -1246,13 +1256,11 @@ function renderDetail(id){
         <div class="subhd" style="margin:13px 0 5px;">Log a Payment</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;"><input class="inp" id="pay-amount" type="number" placeholder="Amount…" style="flex:1 1 100px;background:#fff;"/><input class="inp" id="pay-date" type="date" value="${today()}" style="flex:1 1 130px;background:#fff;"/><button class="savebtn" id="log-pay-btn" style="flex:0 0 auto;padding:9px 14px;font-size:13px;">Add</button></div>
         ${paymentLog}`:''}
-      </div>
-    </div>`:''}
-    <div class="card"><div class="ctitle">${isPost?'Stewardship':'Touchpoint'} Progress</div>
+      </div>`):''}
+    ${dcard(did,'touch',`${isPost?'Stewardship':'Touchpoint'} Progress`,`
       <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--brand);">${isPost?'Personal touches':'📞 Retail'}: ${ret} of ${d.retailTarget||1}</span><span>${rPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${rPct}%;background:var(--brand);"></div></div></div>
-      <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--amber);">${isPost?'Reports/newsletters':'📄 Wholesale'}: ${who} of ${d.wholesaleTarget||1}</span><span>${wPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${wPct}%;background:var(--amber);"></div></div></div>
-    </div>
-    <div class="card"><div class="ctitle">Log Interaction</div>
+      <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--amber);">${isPost?'Reports/newsletters':'📄 Wholesale'}: ${who} of ${d.wholesaleTarget||1}</span><span>${wPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${wPct}%;background:var(--amber);"></div></div></div>`)}
+    ${dcard(did,'log','Log Interaction',`
       <div class="chips" style="margin-bottom:9px;">${typeBtns}</div>
       <div style="display:flex;gap:8px;margin-bottom:8px;">
         <div style="flex:1;"><label class="field-lbl">Spoke with</label><select class="inp" id="spouse-sel" style="width:100%;">${spouseOpts}</select></div>
@@ -1271,14 +1279,12 @@ function renderDetail(id){
       <div style="display:flex;gap:8px;">
         <button class="savebtn alt" id="add-task-btn" style="flex:1;">+ Add task only</button>
         <button class="savebtn" id="save-log-btn" style="flex:2;">Save Interaction</button>
-      </div>
-    </div>
-    ${openTasks.length>0||doneTasks.length>0?`<div class="card"><div class="ctitle">Follow-up Tasks</div>${taskHTML(openTasks)}${doneTasks.length>0?`<div class="subhd" style="margin:9px 0 3px;">Completed</div>${taskHTML(doneTasks)}`:''}</div>`:''}
-    <div class="card"><div class="ctitle">Interaction History (${(d.interactions||[]).length})</div>${histHTML}</div>
-    ${canMng?`<div class="card"><div class="ctitle">Remove Contact</div>
+      </div>`)}
+    ${openTasks.length>0||doneTasks.length>0?dcard(did,'tasks','Follow-up Tasks',`${taskHTML(openTasks)}${doneTasks.length>0?`<div class="subhd" style="margin:9px 0 3px;">Completed</div>${taskHTML(doneTasks)}`:''}`):''}
+    ${dcard(did,'history',`Interaction History (${(d.interactions||[]).length})`,histHTML)}
+    ${canMng?dcard(did,'remove','Remove Contact',`
       <button class="savebtn danger" id="del-contact-btn">🗑 Archive or delete this contact</button>
-      <div style="font-size:12px;color:var(--text-3);margin-top:8px;">Choose to <b>archive</b> (keep the record, e.g. deceased) or move to the <b>Recycle Bin</b>. Both are reversible from Settings.</div>
-    </div>`:''}
+      <div style="font-size:12px;color:var(--text-3);margin-top:8px;">Choose to <b>archive</b> (keep the record, e.g. deceased) or move to the <b>Recycle Bin</b>. Both are reversible from Settings.</div>`):''}
   </div>`;
 }
 
@@ -1431,7 +1437,7 @@ function renderTasks(){
     <div class="tsec">${done.length?`<input class="sinput" id="task-search" placeholder="🔍 Search completed tasks by name or note…" autocomplete="off" style="margin-bottom:12px;"/><div class="tcard" id="task-list">${done.map(crow).join('')}</div><div class="empty" id="task-search-empty" style="display:none;"><div class="empty-icon">🔍</div><div class="empty-txt">No completed tasks match.</div></div>`:`<div class="empty"><div class="empty-icon">🗂</div><div class="empty-txt">No completed tasks yet.</div></div>`}</div>`;
   }
   const od=overdueTasks(),td=todayTasks(),up=upcomingTasks().slice(0,25);
-  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}"></div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div></div></div>`;
+  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}" title="Mark done"></div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${t.due?taskDueLabel(t.due):'No due date'}</div></div><div class="tacts"><input type="date" class="tdate-inp" data-tdate="${t.donorId}|${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-gdel="${t.donorId}|${t.id}" title="Delete task">×</button></div></div>`;
   const sec=(title,arr)=>arr.length?`<h3>${title}</h3><div class="tcard">${arr.map(row).join('')}</div>`:'';
   return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${od.length} overdue · ${td.length} today</div></div></div></div>
   ${tabBar}
@@ -1871,7 +1877,13 @@ function attachEvents(){
   // Detail
   const activeDetailId=isDesktop?desktopDetailId:detailId;
   document.getElementById('back-btn')?.addEventListener('click',()=>{view='list';render();});
-  document.getElementById('profile-toggle')?.addEventListener('click',()=>{profileOpen[activeDetailId]=!profileOpen[activeDetailId];render();});
+  // Collapsible detail sections — toggle in place (no re-render) so focus/scroll survive.
+  document.querySelectorAll('[data-collhead]').forEach(el=>el.addEventListener('click',()=>{
+    const k=el.dataset.collhead;const card=el.closest('.card');if(!card)return;
+    const next=card.classList.contains('collapsed');
+    sectionOpen[k]=next;card.classList.toggle('collapsed',!next);
+    const ar=el.querySelector('.carrow');if(ar)ar.textContent=next?'▾':'▸';
+  }));
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
   document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
   document.getElementById('edit-contacts-btn')?.addEventListener('click',()=>showEditContacts(activeDetailId));
@@ -1937,10 +1949,13 @@ function attachEvents(){
   });
   document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const t=(d.tasks||[]).find(x=>x.id===parseInt(b.dataset.td));if(!t)return;if(t.done)uncompleteTask(activeDetailId,t.id);else completeTaskWithFollowup(activeDetailId,t.id);}));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).filter(t=>t.id!==parseInt(b.dataset.tdel))});render();}));
+  document.querySelectorAll('[data-tdate2]').forEach(inp=>inp.addEventListener('change',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const tid=parseInt(inp.dataset.tdate2);updateDonor(activeDetailId,{tasks:(d.tasks||[]).map(t=>t.id===tid?{...t,due:e.target.value}:t)});render();}));
   document.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{interactions:(d.interactions||[]).filter(i=>i.id!==parseInt(b.dataset.di))});render();}));
   document.querySelectorAll('[data-ei]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showEditInteraction(activeDetailId,parseInt(b.dataset.ei));}));
   document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');completeTaskWithFollowup(did,tid);}));
   document.querySelectorAll('[data-untd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.untd.split('|');uncompleteTask(did,tid);}));
+  document.querySelectorAll('[data-gdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const[did,tid]=b.dataset.gdel.split('|');const d=getDonor(did);if(!d)return;if(!confirm('Delete this task?'))return;updateDonor(did,{tasks:(d.tasks||[]).filter(t=>String(t.id)!==tid)});render();}));
+  document.querySelectorAll('[data-tdate]').forEach(inp=>inp.addEventListener('change',e=>{e.stopPropagation();const[did,tid]=inp.dataset.tdate.split('|');const d=getDonor(did);if(!d)return;updateDonor(did,{tasks:(d.tasks||[]).map(t=>String(t.id)===tid?{...t,due:e.target.value}:t)});render();}));
   document.querySelectorAll('[data-ttab]').forEach(b=>b.addEventListener('click',()=>{taskTab=b.dataset.ttab;render();}));
   document.getElementById('task-search')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();let shown=0;document.querySelectorAll('#task-list .titem').forEach(it=>{const hit=(it.dataset.search||'').includes(q);it.style.display=hit?'':'none';if(hit)shown++;});const empty=document.getElementById('task-search-empty');const list=document.getElementById('task-list');if(empty)empty.style.display=shown===0?'':'none';if(list)list.style.display=shown===0?'none':'';});
   document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.goto)));
