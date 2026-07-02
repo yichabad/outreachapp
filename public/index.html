@@ -574,7 +574,7 @@ const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
 
 // ── PERSISTENCE / API ─────────────────────────────────────────────
 let APP_BASE=window.APP_BASE||''; if(APP_BASE.indexOf('%')>-1)APP_BASE='';
-function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier',countMode:'all',campaignGoals:{}};}
+function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier',countMode:'all',taskFilter:'mine',campaignGoals:{}};}
 
 function api(path,opts){
   return fetch(APP_BASE+'/api'+path,Object.assign({headers:{'Content-Type':'application/json'},credentials:'same-origin'},opts||{}))
@@ -658,7 +658,8 @@ function today(){return new Date().toISOString().slice(0,10);}
 function fmt(n){return(!n&&n!==0)||n===0?'—':'$'+Number(n).toLocaleString();}
 // Value-aware: a real 0 is a value (shows "$0"); only blank/unset shows "—".
 function hasVal(x){return x!==null&&x!==undefined&&x!=='';}
-function fmtT(x){return hasVal(x)?'$'+Number(x).toLocaleString():'—';}
+// Ask amounts (High/Medium/Low): 0 or empty means "not filled out yet" → show —.
+function fmtT(x){return hasVal(x)&&Number(x)!==0?'$'+Number(x).toLocaleString():'—';}
 function fmtDate(v){if(!v)return'';try{const d=new Date(typeof v==='number'?Math.round((v-25569)*86400000):v+'T12:00:00');return isNaN(d)?String(v):d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});}catch{return String(v);}}
 function isPledged(d){return(d.pledgeAmount&&d.pledgeAmount>0)||(d.preArcStage>=4)||d.postArcStage!==undefined;}
 function isFulfilled(d){return d.pledgeAmount>0&&(d.pledgePaid||0)>=d.pledgeAmount;}
@@ -667,7 +668,13 @@ function taskDueLabel(d){if(!d)return'';const diff=Math.floor((new Date(d+'T12:0
 // Tasks are shared: anyone who can see the contact sees its tasks (like the
 // interaction history). We still record `by` for attribution ("added by …").
 function pendingVisible(t){return true;}
-function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t)).map(t=>({...t,donorId:d.id,donorName:d.name})));}
+// Who created a task, for the row label. Own tasks read "you".
+function taskWho(t){if(t.by&&currentUser&&t.by===currentUser.id)return'you';return(t.by?userName(t.by):'')||'—';}
+// Worklist filter (dashboard + Tasks tab): "mine" or "all". Contact detail
+// always shows every task for that contact regardless of this setting.
+function taskMineOnly(){return (settings.taskFilter||'mine')==='mine';}
+function taskMatchesFilter(t){return !taskMineOnly()||(!!t.by&&!!currentUser&&t.by===currentUser.id);}
+function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done&&taskMatchesFilter(t)).map(t=>({...t,donorId:d.id,donorName:d.name})));}
 function overdueTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='overdue');}
 function todayTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='today');}
 function upcomingTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='upcoming').sort((a,b)=>(a.due||'').localeCompare(b.due||''));}
@@ -1101,7 +1108,7 @@ function renderDashboard(){
     return`<div class="call-card" data-cardopen="${t.donorId}" style="cursor:pointer;">
       <div class="call-info">
         <div class="call-name">${esc(d.name)}</div>
-        <div class="call-meta"><span class="ttype">${esc(t.type||'📞 Call')}</span> ${esc(t.note||'')} · <span class="tdue ${st}">${t.due?taskDueLabel(t.due):'No due date'}</span></div>
+        <div class="call-meta"><span class="ttype">${esc(t.type||'📞 Call')}</span> ${esc(t.note||'')} · <span class="tdue ${st}">${t.due?taskDueLabel(t.due):'No due date'}</span> · <span style="color:var(--text-3);">by ${esc(taskWho(t))}</span></div>
         ${d.pPhone?`<a class="call-phone" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''}
       </div>
       <div class="call-right">
@@ -1170,7 +1177,7 @@ function renderDashboard(){
       </div>
     </div>
     ${campaignDonors().length===0?`<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">No contacts in this campaign yet.<br/>Import your Excel file or add a contact to get started.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`
-    :`${dueTasks.length?`<div class="list-head">Today's Tasks (${dueTasks.length})</div>${taskCards}`:`<div class="empty" style="padding:22px 0;"><div class="empty-icon">✅</div><div class="empty-txt">No tasks due today. Nice work!</div></div>`}
+    :`${taskFilterBar()}${dueTasks.length?`<div class="list-head">Today's Tasks (${dueTasks.length})</div>${taskCards}`:`<div class="empty" style="padding:22px 0;"><div class="empty-icon">✅</div><div class="empty-txt">No ${taskMineOnly()?'':'team '}tasks due today. Nice work!</div></div>`}
        ${suggestions.length?`<div class="list-head" style="margin-top:20px;">Who to reach next</div>${sugCards}`:''}`}
   </div>`;
 }
@@ -1230,7 +1237,7 @@ function renderDetail(id){
   const tierBtns=`<button class="chip${!d.tier?' on':''}" data-tier="">No tier</button>`+TIERS.map(t=>`<button class="chip${d.tier===t?' on':''}" data-tier="${t}">${TIER_CFG[t].label}</button>`).join('');
   const payPlanBtns=PAY_PLANS.map(p=>`<button class="pay-chip${(d.pledgePlan||'')=== p?' on':''}" data-payplan="${p}">${p}</button>`).join('');
   const openTasks=(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t));
-  const taskMeta=t=>{const who=t.by&&t.by!==(currentUser&&currentUser.id)?userName(t.by):'';return who?`<div class="tby">added by ${esc(who)}</div>`:'';};
+  const taskMeta=t=>`<div class="tby">added by ${esc(taskWho(t))}</div>`;
   const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk" data-td="${t.id}" title="Mark done"></div><div class="ttxt"><span class="ttype">${esc(t.type||'📞 Call')}</span> ${esc(t.note||'')}${t.due?`<div class="tdue ${taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:'<div class="tdue upcoming">No due date</div>'}${taskMeta(t)}</div><div class="tacts"><input type="date" class="tdate-inp" data-tdate2="${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-tdel="${t.id}" title="Delete task">×</button></div></div>`).join('');
   const histHTML=(d.interactions||[]).length===0?'<div style="font-size:13px;color:var(--text-3);">No interactions yet.</div>'
     :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><div class="hactions"><button class="hedit" data-ei="${i.id}" title="Edit">✏️</button><button class="hdel" data-di="${i.id}" title="Delete">×</button></div></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
@@ -1247,7 +1254,7 @@ function renderDetail(id){
   return`<div class="dhdr">${isDesktop?'':'<button class="backbtn" id="back-btn">←</button>'}<div class="dh-main"><div class="dhtitle">${esc(d.name)}</div><div class="dhsub">${esc(d.city)}${d.state?', '+esc(d.state):''}</div></div>${d.chaiClub?'<span class="chai-badge">♾️ Chai Club</span>':''}<span class="tier-badge" style="background:${tc.bg};color:${tc.color};">${tc.label}</span></div>
   <div class="dbody">
     ${dcard(did,'ask','Ask Amounts',`
-      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Yr Campaign Commitment</div><input class="tval-inp" data-tgt="actual" type="text" inputmode="numeric" value="${d.actual?Number(d.actual).toLocaleString():''}" placeholder="—"/></div></div>
+      <div class="tgrid">${[['High','high'],['Medium','medium'],['Low','low']].map(([l,k])=>`<div class="tcell"><div class="tlbl">${l}</div><input class="tval-inp" data-tgt="${k}" type="text" inputmode="numeric" value="${hasVal(d[k])&&Number(d[k])!==0?Number(d[k]).toLocaleString():''}" placeholder="—"/></div>`).join('')}<div class="tcell"><div class="tlbl">Last Yr Campaign Commitment</div><input class="tval-inp" data-tgt="actual" type="text" inputmode="numeric" value="${d.actual?Number(d.actual).toLocaleString():''}" placeholder="—"/></div></div>
       <label class="field-lbl" style="margin-top:12px;display:flex;align-items:center;gap:8px;">Monthly giving${d.askMonthly!=null?'<span class="ask-reviewed">✓ reviewed</span>':''}</label>
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div><div class="mini-lbl">Currently gives</div><input class="inp" id="prevmonthly-inp" type="number" inputmode="numeric" value="${d.prevMonthly==null?'':d.prevMonthly}" placeholder="$/mo" style="width:104px;"/><div id="prevmonthly-yr" class="mini-yr">${d.prevMonthly>0?'= '+fmt(d.prevMonthly*12)+' / yr':''}</div></div>
@@ -1396,7 +1403,7 @@ function renderPlan(){
   const rows=sorted.map(d=>{
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
-      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${hasVal(d[k])?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
+      :['low','medium','high'].map(k=>`<td><input class="tval-inp plan-tinp" data-plan-tgt="${k}" data-pid="${esc(d.id)}" type="text" inputmode="numeric" value="${hasVal(d[k])&&Number(d[k])!==0?Number(d[k]).toLocaleString():''}" placeholder="—"/></td>`).join('');
     const tierSel=`<select class="plan-tier" data-plan-tier="${esc(d.id)}"><option value=""${!d.tier?' selected':''}>— Tier —</option>${TIERS.map(t=>`<option value="${t}"${d.tier===t?' selected':''}>${TIER_CFG[t].label}</option>`).join('')}</select>`;
     const arch=canManageContact(d)?`<button class="plan-arch" data-plan-arch="${esc(d.id)}" title="Archive — hides from all lists">🗄 Archive</button>`:'';
     return`<tr><td class="plan-name"><span class="plan-link" data-goto="${esc(d.id)}">${esc(d.name)}</span></td><td class="plan-tiercell">${tierSel}</td>${cells}<td class="plan-act">${arch}</td></tr>`;
@@ -1470,11 +1477,14 @@ function showTaskLog(donorId,taskId){
 // Interaction History (see showTaskLog), so there's no "Completed" list.
 function renderTasks(){
   const od=overdueTasks(),td=todayTasks(),up=upcomingTasks().slice(0,25);
-  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}" title="Mark done"></div><div class="ttxt" data-goto="${t.donorId}"><span class="ttype">${esc(t.type||'📞 Call')}</span> <span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${t.due?taskDueLabel(t.due):'No due date'}</div></div><div class="tacts"><input type="date" class="tdate-inp" data-tdate="${t.donorId}|${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-gdel="${t.donorId}|${t.id}" title="Delete task">×</button></div></div>`;
+  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}" title="Mark done"></div><div class="ttxt" data-goto="${t.donorId}"><span class="ttype">${esc(t.type||'📞 Call')}</span> <span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${t.due?taskDueLabel(t.due):'No due date'}</div><div class="tby">added by ${esc(taskWho(t))}</div></div><div class="tacts"><input type="date" class="tdate-inp" data-tdate="${t.donorId}|${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-gdel="${t.donorId}|${t.id}" title="Delete task">×</button></div></div>`;
   const sec=(title,arr)=>arr.length?`<h3>${title}</h3><div class="tcard">${arr.map(row).join('')}</div>`:'';
   return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${od.length} overdue · ${td.length} today</div></div></div></div>
-  <div class="tsec">${sec(`🔴 Overdue (${od.length})`,od)}${sec(`🟡 Today (${td.length})`,td)}${sec('📅 Upcoming',up)}${od.length+td.length+up.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No follow-up tasks!</div></div>`:''}</div>`;
+  ${taskFilterBar()}
+  <div class="tsec">${sec(`🔴 Overdue (${od.length})`,od)}${sec(`🟡 Today (${td.length})`,td)}${sec('📅 Upcoming',up)}${od.length+td.length+up.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No ${taskMineOnly()?'':'team '}follow-up tasks!</div></div>`:''}</div>`;
 }
+// My/All worklist toggle, shared by the Tasks tab and the dashboard.
+function taskFilterBar(){const mine=taskMineOnly();return`<div class="tab-toggle" style="max-width:1040px;margin:0 auto 8px;"><button class="tab-btn ${mine?'on':'off'}" data-tfilter="mine">👤 My tasks</button><button class="tab-btn ${!mine?'on':'off'}" data-tfilter="all">👥 All tasks</button></div>`;}
 
 // ── RENDER: SETTINGS ───────────────────────────────────────────────
 function renderSettings(){
@@ -1971,6 +1981,7 @@ function attachEvents(){
   document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');showTaskLog(did,tid);}));
   document.querySelectorAll('[data-gdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const[did,tid]=b.dataset.gdel.split('|');const d=getDonor(did);if(!d)return;if(!confirm('Delete this task?'))return;updateDonor(did,{tasks:(d.tasks||[]).filter(t=>String(t.id)!==tid)});render();}));
   document.querySelectorAll('[data-tdate]').forEach(inp=>inp.addEventListener('change',e=>{e.stopPropagation();const[did,tid]=inp.dataset.tdate.split('|');const d=getDonor(did);if(!d)return;updateDonor(did,{tasks:(d.tasks||[]).map(t=>String(t.id)===tid?{...t,due:e.target.value}:t)});render();}));
+  document.querySelectorAll('[data-tfilter]').forEach(b=>b.addEventListener('click',()=>{settings.taskFilter=b.dataset.tfilter;markSettings();render();}));
   document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.goto)));
 
   // Settings
