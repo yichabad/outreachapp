@@ -1699,18 +1699,9 @@ function showEditContacts(id){
   document.getElementById('ec-save').onclick=()=>{
     const g=eid=>document.getElementById(eid).value.trim();
     const nv={pName:g('ec-pn'),pPhone:g('ec-pp'),pEmail:g('ec-pe'),pNotes:g('ec-pnotes'),sName:g('ec-sn'),sPhone:g('ec-sp'),sEmail:g('ec-se'),sNotes:g('ec-snotes')};
-    // Diff against current values so we can push exactly what changed to Salesforce.
-    const map=[['p','Name','pName'],['p','Mobile','pPhone'],['p','Email','pEmail'],['p','Personal notes','pNotes'],['s','Name','sName'],['s','Mobile','sPhone'],['s','Email','sEmail'],['s','Personal notes','sNotes']];
-    const changes=[];map.forEach(([person,field,f])=>{const o=d[f]||'',n=nv[f]||'';if(o!==n)changes.push({person,field,old:o,new:n});});
+    // Saved to the app now; changes to synced fields go to Salesforce on the next
+    // sync (nightly, or the admin's "Sync now"), not instantly.
     updateDonor(id,nv);m.remove();render();
-    // Push to Salesforce only for people who have a Salesforce id.
-    const pushable=sfConnected?changes.filter(ch=>ch.person==='p'?d.pId:d.sId):[];
-    if(pushable.length){
-      setStatus('saving');
-      api('/sf/push-contact',{method:'POST',body:JSON.stringify({contactId:id,changes:pushable})})
-        .then(()=>setStatus('saved'))
-        .catch(err=>{if(err.code!==401){setStatus('offline');alert('Saved in the app, but updating Salesforce failed:\n'+err.message);}});
-    }
   };
 }
 // Edit a logged interaction (type / who / date / note).
@@ -2357,8 +2348,8 @@ function loadSfStatus(){
       el.innerHTML=`<div class="ctitle" style="color:var(--emer);">✅ Connected to Salesforce</div>
         <div style="font-size:12.5px;color:var(--text-3);margin:4px 0 12px;line-height:1.5;">${who?('Signed in as '+who+'<br>'):''}${s.instanceUrl?'Org: '+esc(s.instanceUrl):''}${s.connectedBy?'<br>Connected by '+esc(s.connectedBy):''}</div>
         <div class="shead" style="margin-top:2px;">Contact info sync (two-way)</div>
-        <div style="font-size:12px;color:var(--text-3);margin:2px 0 10px;line-height:1.5;">Names, mobiles, emails &amp; personal notes. Editing a household here updates Salesforce right away; Salesforce edits pull in automatically every day.<br>Last pulled: <b>${esc(last)}</b></div>
-        <button class="savebtn" id="sf-pull">⟳ Pull contact info from Salesforce now</button>
+        <div style="font-size:12px;color:var(--text-3);margin:2px 0 10px;line-height:1.5;">Names, mobiles, emails &amp; personal notes. Syncs both ways <b>once a day automatically</b> — your edits are sent up and Salesforce changes pulled down on the same daily run (or when you sync now). Nothing syncs instantly.<br>Last synced: <b>${esc(last)}</b></div>
+        <button class="savebtn" id="sf-pull">⟳ Sync with Salesforce now</button>
         <button class="savebtn alt" id="sf-changes" style="margin-top:9px;">📋 View change report</button>
         <div id="sf-pull-out" style="font-size:12.5px;margin-top:10px;line-height:1.5;"></div>
         <div class="shead" style="margin-top:14px;">Connection</div>
@@ -2366,10 +2357,10 @@ function loadSfStatus(){
         <button class="savebtn" id="sf-disconnect" style="margin-top:9px;">Disconnect</button>
         <div id="sf-test-out" style="font-size:12.5px;margin-top:10px;line-height:1.5;"></div>`;
       document.getElementById('sf-pull').onclick=()=>{
-        if(!confirm('Pull the latest names, mobiles, emails and notes from Salesforce into the app?\n\nWhere they differ, app values are updated to match Salesforce. Every change is recorded in the report.'))return;
-        const o=document.getElementById('sf-pull-out');o.textContent='Syncing from Salesforce… (this can take a minute)';
+        if(!confirm('Sync names, mobiles, emails and notes with Salesforce now?\n\nYour queued edits are sent up first, then Salesforce changes are pulled down (Salesforce wins where they still differ). Archived and recycle-bin contacts are skipped. Every change is recorded in the report.'))return;
+        const o=document.getElementById('sf-pull-out');o.textContent='Syncing with Salesforce… (this can take a minute)';
         api('/sf/pull-contacts',{method:'POST',body:JSON.stringify({})}).then(async r=>{
-          o.innerHTML='<span style="color:var(--emer);font-weight:700;">✓ Synced</span> — '+r.changes+' change'+(r.changes===1?'':'s')+' across '+r.scanned+' households.';
+          o.innerHTML='<span style="color:var(--emer);font-weight:700;">✓ Synced</span> — '+(r.pushed||0)+' pushed up, '+r.changes+' pulled down across '+r.scanned+' households.';
           await loadState();render();loadSfStatus();
         }).catch(err=>{if(err.code!==401)o.innerHTML='<span style="color:var(--red);">'+esc(err.message)+'</span>';});
       };

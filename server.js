@@ -445,6 +445,7 @@ app.get('/api/state', (req, res) => {
 function stripManaged(data) {
   const c = Object.assign({}, data);
   delete c.ownerId; delete c.assignedUserIds; delete c.updatedAt; delete c.updatedBy;
+  delete c.sfQueue; // server-managed: pending Salesforce pushes, never set by the client
   return c;
 }
 
@@ -478,7 +479,8 @@ app.put('/api/contacts/:id', (req, res) => {
   }
   const existing = db.contacts[idx];
   if (!canSee(req.user, existing)) return res.status(403).json({ error: 'no access' });
-  const merged = Object.assign({}, existing, stripManaged(req.body || {}), {
+  const incoming = stripManaged(req.body || {});
+  const merged = Object.assign({}, existing, incoming, {
     id: existing.id,
     ownerId: existing.ownerId,
     assignedUserIds: existing.assignedUserIds || [],
@@ -486,6 +488,8 @@ app.put('/api/contacts/:id', (req, res) => {
     updatedAt: Date.now(),
     updatedBy: req.user.id,
   });
+  // Queue any edits to synced fields for the next Salesforce sync (not sent instantly).
+  if (db.meta.salesforce && db.meta.salesforce.refreshToken) queueSfChanges(existing, incoming, merged);
   db.contacts[idx] = merged;
   persist();
   res.json({ contact: merged });
@@ -792,6 +796,27 @@ function personDef(pre) {
     label: pre === 'p' ? 'Primary' : 'Secondary',
   };
 }
+// App fields that sync to Salesforce → [appField, person prefix, SF field label].
+const SF_FIELD_MAP = [
+  ['pName', 'p', 'Name'], ['pPhone', 'p', 'Mobile'], ['pEmail', 'p', 'Email'], ['pNotes', 'p', 'Personal notes'],
+  ['sName', 's', 'Name'], ['sPhone', 's', 'Mobile'], ['sEmail', 's', 'Email'], ['sNotes', 's', 'Personal notes'],
+];
+// Record edits to synced fields on the contact's push queue instead of sending them
+// to Salesforce immediately — the queue is flushed on the scheduled/manual sync.
+function queueSfChanges(existing, incoming, target) {
+  const q = Array.isArray(target.sfQueue) ? target.sfQueue.slice() : [];
+  SF_FIELD_MAP.forEach(([f, person, field]) => {
+    if (incoming[f] === undefined) return;              // field not part of this update
+    const oldV = existing[f] || '', newV = incoming[f] || '';
+    if (String(oldV) === String(newV)) return;          // unchanged
+    const sfId = person === 'p' ? existing.pId : existing.sId;
+    if (!sfId) return;                                   // person isn't linked to Salesforce
+    const i = q.findIndex((e) => e.person === person && e.field === field);
+    const entry = { person, field, old: i >= 0 ? q[i].old : oldV, new: newV };
+    if (i >= 0) q[i] = entry; else q.push(entry);        // keep only the latest per field
+  });
+  target.sfQueue = q;
+}
 // Pull Salesforce → app for the given contacts. Returns number of field changes.
 async function sfPullContacts(contacts) {
   if (!(db.meta.salesforce && db.meta.salesforce.refreshToken)) throw new Error('Salesforce not connected');
@@ -826,6 +851,44 @@ async function sfPullContacts(contacts) {
   db.meta.sfLastPullAt = Date.now();
   persist();
   return changes;
+}
+
+// Flush queued app → Salesforce edits (built up since the last sync). Returns the
+// number of contacts pushed. Failed pushes stay queued for the next attempt.
+async function sfFlushQueue() {
+  if (!(db.meta.salesforce && db.meta.salesforce.refreshToken)) return 0;
+  const pending = db.contacts.filter((c) => isActiveContact(c) && Array.isArray(c.sfQueue) && c.sfQueue.length);
+  if (!pending.length) return 0;
+  const version = await sfApiVersion();
+  let pushed = 0;
+  for (const c of pending) {
+    const byPerson = {};
+    c.sfQueue.forEach((ch) => { (byPerson[ch.person] = byPerson[ch.person] || []).push(ch); });
+    const remaining = [];
+    for (const pre of Object.keys(byPerson)) {
+      const def = personDef(pre); const sfId = c[def.id];
+      if (!sfId) continue; // person no longer linked — drop these
+      const patch = {};
+      byPerson[pre].forEach((ch) => {
+        if (ch.field === 'Name') { const n = splitName(ch.new); patch.FirstName = n.FirstName; patch.LastName = n.LastName; }
+        else if (ch.field === 'Email') patch.Email = ch.new || null;
+        else if (ch.field === 'Mobile') patch.MobilePhone = ch.new || null;
+        else if (ch.field === 'Personal notes') patch.OneCRM__Personal_Notes__c = ch.new || null;
+      });
+      if (!Object.keys(patch).length) continue;
+      try {
+        await sfApi('/services/data/v' + version + '/sobjects/Contact/' + sfId, { method: 'PATCH', body: JSON.stringify(patch) });
+        byPerson[pre].forEach((ch) => logSync({ direction: 'app→sf', contactId: c.id, contactName: c.name, person: def.label, personId: sfId, field: ch.field, old: ch.old || '', new: ch.new || '', by: 'Scheduled sync' }));
+        pushed++;
+      } catch (e) {
+        console.error('[sf] queued push failed for ' + c.id + ':', e.message);
+        remaining.push(...byPerson[pre]); // keep for the next sync
+      }
+    }
+    c.sfQueue = remaining;
+  }
+  persist();
+  return pushed;
 }
 
 // Push app → Salesforce for the fields the user just edited on one contact.
@@ -863,12 +926,13 @@ app.post('/api/sf/push-contact', async (req, res) => {
 // Manual pull (admin): Salesforce → app for all (or given) contacts.
 app.post('/api/sf/pull-contacts', requireAdmin, async (req, res) => {
   try {
+    const pushed = await sfFlushQueue(); // send queued app edits up first
     const ids = Array.isArray(req.body.contactIds) && req.body.contactIds.length ? req.body.contactIds : null;
     // Sync active contacts only — never quietly rewrite archived / recycle-bin ones.
     const active = db.contacts.filter(isActiveContact);
     const list = ids ? active.filter((c) => ids.includes(c.id)) : active;
     const changes = await sfPullContacts(list);
-    res.json({ ok: true, changes, scanned: list.length, at: db.meta.sfLastPullAt });
+    res.json({ ok: true, pushed, changes, scanned: list.length, at: db.meta.sfLastPullAt });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -990,9 +1054,10 @@ function scheduleSfSync() {
   const DAY = 24 * 60 * 60 * 1000;
   const run = () => {
     if (db.meta.salesforce && db.meta.salesforce.refreshToken) {
-      sfPullContacts(db.contacts.filter(isActiveContact))
+      sfFlushQueue()
+        .then((p) => { if (p) console.log('[sf] daily push: ' + p + ' contact(s)'); return sfPullContacts(db.contacts.filter(isActiveContact)); })
         .then((n) => console.log('[sf] daily contact pull: ' + n + ' change(s)'))
-        .catch((e) => console.error('[sf] daily contact pull failed:', e.message));
+        .catch((e) => console.error('[sf] daily sync failed:', e.message));
     }
   };
   // If we've never pulled, wait a full day (the admin runs the first pull manually).
