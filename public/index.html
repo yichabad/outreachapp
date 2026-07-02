@@ -287,6 +287,7 @@ a{color:inherit;}
 .tchk:hover{border-color:var(--emer);}
 .tchk.done{background:var(--emer);border-color:var(--emer);color:#fff;}
 .ttxt{flex:1;font-size:13.5px;color:var(--text);line-height:1.45;cursor:pointer;}
+.tby{font-size:11px;color:var(--text-3);margin-top:3px;font-weight:600;}
 .tdue{font-size:11px;margin-top:3px;font-weight:700;}
 .tdue.overdue{color:var(--red);}
 .tdue.today{color:var(--amber);}
@@ -578,7 +579,7 @@ let currentUser=null, allUsers=[], sfConnected=false;
 let donors=[], settings=defaultSettings();
 let campaigns=[], activeCampaignId=null;
 let dashState={day:'',doneCalls:[],streak:{date:'',count:0,lastGoal:0}};
-let view='dashboard',detailId=null,listTab='courting',planSort='tier';
+let view='dashboard',detailId=null,listTab='courting',planSort='tier',taskTab='followups';
 let searchVal='',filterVal='All',sortVal='target';
 let bulkMode=false,bulkSel=new Set(),lastBulkIdx=null;
 let logType=INT_TYPES[0],logSpouse='Primary';
@@ -652,10 +653,15 @@ function isPledged(d){return(d.pledgeAmount&&d.pledgeAmount>0)||(d.preArcStage>=
 function isFulfilled(d){return d.pledgeAmount>0&&(d.pledgePaid||0)>=d.pledgeAmount;}
 function taskDueStatus(d){if(!d)return'upcoming';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);return diff<0?'overdue':diff===0?'today':'upcoming';}
 function taskDueLabel(d){if(!d)return'';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);if(diff<0)return`${Math.abs(diff)}d overdue`;if(diff===0)return'Due today';if(diff===1)return'Due tomorrow';return'Due '+new Date(d+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'});}
-function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done).map(t=>({...t,donorId:d.id,donorName:d.name})));}
+// A pending task belongs to whoever created it. Only its creator sees it.
+// Legacy tasks (no creator recorded) stay visible to anyone with contact access.
+function pendingVisible(t){return !t.by||t.by===(currentUser&&currentUser.id);}
+function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t)).map(t=>({...t,donorId:d.id,donorName:d.name})));}
 function overdueTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='overdue');}
 function todayTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='today');}
 function upcomingTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='upcoming').sort((a,b)=>(a.due||'').localeCompare(b.due||''));}
+// Completed tasks are shared: anyone who can see the contact sees them, newest first.
+function completedTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>t.done).map(t=>({...t,donorId:d.id,donorName:d.name}))).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));}
 function userName(id){const u=allUsers.find(x=>x.id===id);return u?(u.name||u.email):'';}
 
 function getStreak(){return dashState.streak||{date:'',count:0,lastGoal:0};}
@@ -1167,8 +1173,12 @@ function renderDetail(id){
   const spouseOpts=[...(!d.pDeceased?['Primary']:[]),...(d.sName&&!d.sDeceased?['Secondary']:[]),...(!d.pDeceased&&d.sName&&!d.sDeceased?['Both']:[])].map(s=>`<option value="${s}" ${logSpouse===s?'selected':''}>${s==='Primary'?esc(d.pName||'Primary'):s==='Secondary'?esc(d.sName||'Secondary'):'Both'}</option>`).join('');
   const tierBtns=`<button class="chip${!d.tier?' on':''}" data-tier="">No tier</button>`+TIERS.map(t=>`<button class="chip${d.tier===t?' on':''}" data-tier="${t}">${TIER_CFG[t].label}</button>`).join('');
   const payPlanBtns=PAY_PLANS.map(p=>`<button class="pay-chip${(d.pledgePlan||'')=== p?' on':''}" data-payplan="${p}">${p}</button>`).join('');
-  const openTasks=(d.tasks||[]).filter(t=>!t.done);const doneTasks=(d.tasks||[]).filter(t=>t.done);
-  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:''}</div><button class="tdel" data-tdel="${t.id}">×</button></div>`).join('');
+  const openTasks=(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t));const doneTasks=(d.tasks||[]).filter(t=>t.done);
+  const taskMeta=t=>{
+    if(t.done){const who=userName(t.doneBy||t.by);const when=t.doneAt?new Date(t.doneAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';return `<div class="tby">✓ ${who?esc(who):'Completed'}${when?' · '+when:''}</div>`;}
+    const who=t.by&&t.by!==(currentUser&&currentUser.id)?userName(t.by):'';return who?`<div class="tby">added by ${esc(who)}</div>`:'';
+  };
+  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:''}${taskMeta(t)}</div><button class="tdel" data-tdel="${t.id}">×</button></div>`).join('');
   const histHTML=(d.interactions||[]).length===0?'<div style="font-size:13px;color:var(--text-3);">No interactions yet.</div>'
     :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><div class="hactions"><button class="hedit" data-ei="${i.id}" title="Edit">✏️</button><button class="hdel" data-di="${i.id}" title="Delete">×</button></div></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
   const profileFields=[['Latest Donation',fmt(d.latestDonation)],['Latest Date',d.latestDate],['Largest Donation',fmt(d.largestDonation)],...Object.entries(d.years||{}).filter(([,v])=>v).sort((a,b)=>String(b[0]).localeCompare(String(a[0]))).map(([y,v])=>[y,fmt(v)]),...Object.entries(d.custom||{})].filter(([,v])=>v&&v!=='—');
@@ -1192,7 +1202,7 @@ function renderDetail(id){
       <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;">
         <div><div class="mini-lbl">Currently gives</div><input class="inp" id="prevmonthly-inp" type="number" inputmode="numeric" value="${d.prevMonthly==null?'':d.prevMonthly}" placeholder="$/mo" style="width:104px;"/><div id="prevmonthly-yr" class="mini-yr">${d.prevMonthly>0?'= '+fmt(d.prevMonthly*12)+' / yr':''}</div></div>
         <div><div class="mini-lbl">Ask this year</div><input class="inp" id="askmonthly-inp" type="number" inputmode="numeric" value="${d.askMonthly==null?'':d.askMonthly}" placeholder="$/mo or 0" style="width:104px;"/><div id="askmonthly-yr" class="mini-yr">${d.askMonthly>0?'= '+fmt(d.askMonthly*12)+' / yr':''}</div></div>
-        <div style="flex:1;min-width:150px;"><div class="mini-lbl">Ask notes</div><input class="inp" id="asknotes-inp" value="${esc(d.askNotes||'')}" placeholder="e.g. pledge over 3 yrs, wants a call first…" style="width:100%;"/></div>
+        <div style="flex:1;min-width:100%;"><div class="mini-lbl">Ask notes</div><textarea class="inp" id="asknotes-inp" placeholder="e.g. pledge over 3 yrs, wants a call first…" style="width:100%;min-height:84px;resize:vertical;line-height:1.45;font-family:inherit;">${esc(d.askNotes||'')}</textarea></div>
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-top:6px;">Enter <b>0</b> for the ask if none — marks it reviewed.</div>
     </div>
@@ -1336,8 +1346,8 @@ function renderPlan(){
   else sorted.sort((a,b)=>planSortVal(b)-planSortVal(a));
   const yrs=planYears();
   const dn=campaignDonors();
-  const hasActual=dn.some(d=>(d.actual||0)>0),hasLargest=dn.some(d=>(d.largestDonation||0)>0);
-  const sortOpts=[['tier','By tier (Top first)'],['ask','Biggest ask (High)'],...(hasActual?[['actual','Most given last year']]:[]),...yrs.map(y=>['yr:'+y,'Most given in '+y]),...(hasLargest?[['largest','Largest gift ever']]:[]),['name','Name (A–Z)']];
+  const hasLargest=dn.some(d=>(d.largestDonation||0)>0);
+  const sortOpts=[['tier','By tier (Top first)'],['ask','Biggest ask (High)'],...yrs.map(y=>['yr:'+y,'Most given in '+y]),...(hasLargest?[['largest','Largest gift ever']]:[]),['name','Name (A–Z)']];
   const rows=sorted.map(d=>{
     const cells=isPledged(d)
       ?`<td class="plan-committed" colspan="3">✓ Committed ${fmt(d.pledgeAmount||0)} <span class="plan-note">— counts as actual</span></td>`
@@ -1371,12 +1381,60 @@ function renderPlan(){
   </div>`;
 }
 
+// ── TASKS: complete + follow-up prompt ─────────────────────────────
+// Mark a task done (stamping who/when), then offer to set the next follow-up.
+function completeTaskWithFollowup(donorId,taskId){
+  const d=getDonor(donorId);if(!d)return;
+  const now=Date.now();
+  updateDonor(donorId,{tasks:(d.tasks||[]).map(t=>String(t.id)===String(taskId)?{...t,done:true,doneAt:now,doneBy:currentUser.id}:t)});
+  render();
+  showFollowupModal(donorId);
+}
+function uncompleteTask(donorId,taskId){
+  const d=getDonor(donorId);if(!d)return;
+  updateDonor(donorId,{tasks:(d.tasks||[]).map(t=>String(t.id)===String(taskId)?{...t,done:false,doneAt:undefined,doneBy:undefined}:t)});
+  render();
+}
+function showFollowupModal(donorId){
+  const d=getDonor(donorId);if(!d)return;
+  const m=document.createElement('div');m.className='overlay';
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Task completed ✓</div>
+    <div class="msub">Want to set a follow-up task for <b>${esc(d.name)}</b>?</div>
+    <div class="mfield"><label class="mlbl">Follow-up</label><input class="inp" id="fum-note" placeholder="What's the next move?" style="width:100%;"/></div>
+    <div class="mfield"><label class="mlbl">Due date (optional)</label><input class="inp" id="fum-date" type="date" style="width:100%;"/></div>
+    <div class="mrow"><button class="mbtn s" id="fum-skip">No thanks</button><button class="mbtn p" id="fum-add">Add follow-up</button></div>
+  </div>`;
+  document.body.appendChild(m);
+  const close=()=>m.remove();
+  m.addEventListener('click',e=>{if(e.target===m)close();});
+  document.getElementById('fum-skip').onclick=close;
+  document.getElementById('fum-note').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('fum-add').click();});
+  document.getElementById('fum-add').onclick=()=>{
+    const el=document.getElementById('fum-note');const note=el.value.trim();const due=document.getElementById('fum-date').value;
+    if(!note){el.focus();el.style.borderColor='var(--red)';return;}
+    const dd=getDonor(donorId);if(!dd){close();return;}
+    updateDonor(donorId,{tasks:[...(dd.tasks||[]),{id:Date.now(),note,due:due||'',done:false,by:currentUser.id}]});
+    close();render();
+  };
+  setTimeout(()=>document.getElementById('fum-note')?.focus(),50);
+}
+
 // ── RENDER: TASKS ──────────────────────────────────────────────────
 function renderTasks(){
+  const isFollow=taskTab!=='completed';
+  const tabBar=`<div class="tab-toggle" style="max-width:1040px;margin:0 auto 4px;"><button class="tab-btn ${isFollow?'on':'off'}" data-ttab="followups">📌 Follow-ups</button><button class="tab-btn ${!isFollow?'on':'off'}" data-ttab="completed">✓ Completed</button></div>`;
+  if(!isFollow){
+    const done=completedTasks();
+    const crow=t=>`<div class="titem" data-search="${esc(((t.donorName||'')+' '+(t.note||'')).toLowerCase())}"><div class="tchk done" data-untd="${t.donorId}|${t.id}" title="Mark as not done">✓</div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tby">✓ ${esc(userName(t.doneBy||t.by)||'Completed')}${t.doneAt?' · '+new Date(t.doneAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):''}</div></div></div>`;
+    return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${done.length} completed</div></div></div></div>
+    ${tabBar}
+    <div class="tsec">${done.length?`<input class="sinput" id="task-search" placeholder="🔍 Search completed tasks by name or note…" autocomplete="off" style="margin-bottom:12px;"/><div class="tcard" id="task-list">${done.map(crow).join('')}</div><div class="empty" id="task-search-empty" style="display:none;"><div class="empty-icon">🔍</div><div class="empty-txt">No completed tasks match.</div></div>`:`<div class="empty"><div class="empty-icon">🗂</div><div class="empty-txt">No completed tasks yet.</div></div>`}</div>`;
+  }
   const od=overdueTasks(),td=todayTasks(),up=upcomingTasks().slice(0,25);
   const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}"></div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div></div></div>`;
   const sec=(title,arr)=>arr.length?`<h3>${title}</h3><div class="tcard">${arr.map(row).join('')}</div>`:'';
-  return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Follow-ups</div><div class="hdr-sub">${od.length} overdue · ${td.length} today</div></div></div></div>
+  return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${od.length} overdue · ${td.length} today</div></div></div></div>
+  ${tabBar}
   <div class="tsec">${sec(`🔴 Overdue (${od.length})`,od)}${sec(`🟡 Today (${td.length})`,td)}${sec('📅 Upcoming',up)}${od.length+td.length+up.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No follow-up tasks!</div></div>`:''}</div>`;
 }
 
@@ -1742,7 +1800,7 @@ function render(){
   attachEvents();
   if(samePlace){SCROLLERS.forEach(s=>{const el=document.querySelector(s);if(el&&saved[s]!=null)el.scrollTop=saved[s];});if(saved.__win!=null)window.scrollTo(0,saved.__win);}
   lastRenderKey=renderKey();
-  try{if(currentUser)localStorage.setItem('ot_view_'+currentUser.id,view==='detail'?'list':view);}catch{}
+  try{if(currentUser){localStorage.setItem('ot_view_'+currentUser.id,view);const ad=isDesktop?desktopDetailId:detailId;if(ad)localStorage.setItem('ot_detail_'+currentUser.id,ad);else localStorage.removeItem('ot_detail_'+currentUser.id);}}catch{}
 }
 
 // ── EVENTS ─────────────────────────────────────────────────────────
@@ -1846,11 +1904,11 @@ function attachEvents(){
   // Setting an expected payment date creates/updates a single follow-up task for it.
   document.getElementById('pledge-plan-date')?.addEventListener('change',e=>{const date=e.target.value;const d=getDonor(activeDetailId);if(!d)return;
     let tasks=(d.tasks||[]).map(t=>t.pledgeFollowup?{...t,due:date,done:false}:t);
-    if(date&&!tasks.some(t=>t.pledgeFollowup))tasks=[...tasks,{id:Date.now(),note:'Follow up: pledge payment expected',due:date,done:false,pledgeFollowup:true}];
+    if(date&&!tasks.some(t=>t.pledgeFollowup))tasks=[...tasks,{id:Date.now(),note:'Follow up: pledge payment expected',due:date,done:false,pledgeFollowup:true,by:currentUser.id}];
     updateDonor(activeDetailId,{pledgePlanNote:date,tasks});render();});
   document.getElementById('add-task-btn')?.addEventListener('click',()=>{const el=document.getElementById('fu-note');const fuNote=el?.value.trim();const fuDate=document.getElementById('fu-date')?.value;const d=getDonor(activeDetailId);if(!d)return;
     if(!fuNote){if(el){el.focus();el.style.borderColor='var(--red)';el.placeholder='Enter a task before adding…';}return;}
-    updateDonor(activeDetailId,{tasks:[...(d.tasks||[]),{id:Date.now(),note:fuNote,due:fuDate||'',done:false}]});render();});
+    updateDonor(activeDetailId,{tasks:[...(d.tasks||[]),{id:Date.now(),note:fuNote,due:fuDate||'',done:false,by:currentUser.id}]});render();});
   document.getElementById('log-pay-btn')?.addEventListener('click',()=>{
     const amt=parseFloat(document.getElementById('pay-amount')?.value)||0;const date=document.getElementById('pay-date')?.value||today();if(!amt)return;
     const d=getDonor(activeDetailId);if(!d)return;const payments=[...(d.payments||[]),{id:Date.now(),amount:amt,date}];updateDonor(activeDetailId,{payments,pledgePaid:payments.reduce((s,p)=>s+p.amount,0)});render();});
@@ -1873,15 +1931,18 @@ function attachEvents(){
     const d=getDonor(activeDetailId);if(!d)return;
     const spouseName=spouse==='Primary'?(d.pName||'Primary'):spouse==='Secondary'?(d.sName||'Secondary'):'Both';
     const interactions=[...(d.interactions||[]),{id:Date.now(),type:logType,date,note,spouse:spouseName}];
-    const tasks=[...(d.tasks||[])];if(fuNote)tasks.push({id:Date.now()+1,note:fuNote,due:fuDate||'',done:false});
+    const tasks=[...(d.tasks||[])];if(fuNote)tasks.push({id:Date.now()+1,note:fuNote,due:fuDate||'',done:false,by:currentUser.id});
     updateDonor(activeDetailId,{interactions,tasks});
     render();
   });
-  document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).map(t=>t.id===parseInt(b.dataset.td)?{...t,done:!t.done}:t)});render();}));
+  document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const t=(d.tasks||[]).find(x=>x.id===parseInt(b.dataset.td));if(!t)return;if(t.done)uncompleteTask(activeDetailId,t.id);else completeTaskWithFollowup(activeDetailId,t.id);}));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).filter(t=>t.id!==parseInt(b.dataset.tdel))});render();}));
   document.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{interactions:(d.interactions||[]).filter(i=>i.id!==parseInt(b.dataset.di))});render();}));
   document.querySelectorAll('[data-ei]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showEditInteraction(activeDetailId,parseInt(b.dataset.ei));}));
-  document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');const d=getDonor(did);if(!d)return;updateDonor(did,{tasks:(d.tasks||[]).map(t=>String(t.id)===tid?{...t,done:true}:t)});render();}));
+  document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');completeTaskWithFollowup(did,tid);}));
+  document.querySelectorAll('[data-untd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.untd.split('|');uncompleteTask(did,tid);}));
+  document.querySelectorAll('[data-ttab]').forEach(b=>b.addEventListener('click',()=>{taskTab=b.dataset.ttab;render();}));
+  document.getElementById('task-search')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();let shown=0;document.querySelectorAll('#task-list .titem').forEach(it=>{const hit=(it.dataset.search||'').includes(q);it.style.display=hit?'':'none';if(hit)shown++;});const empty=document.getElementById('task-search-empty');const list=document.getElementById('task-list');if(empty)empty.style.display=shown===0?'':'none';if(list)list.style.display=shown===0?'none':'';});
   document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.goto)));
 
   // Settings
@@ -2322,9 +2383,15 @@ function restoreBackup(file){
 // Return to the tab the user was last on (falls back to Home).
 function restoreView(){
   let v;try{v=localStorage.getItem('ot_view_'+(currentUser&&currentUser.id));}catch{}
-  const ok=['dashboard','list','tasks','plan','settings','admin'];
+  const ok=['dashboard','list','tasks','plan','settings','admin','detail'];
   if(v==='admin'&&!(currentUser&&currentUser.role==='admin'))v='dashboard';
   return ok.includes(v)?v:'dashboard';
+}
+// Reopen the contact that was open before a reload, so a refresh stays on the detail view.
+function restoreDetail(){
+  try{const sd=localStorage.getItem('ot_detail_'+(currentUser&&currentUser.id));
+    if(sd&&getDonor(sd)){if(window.innerWidth>=900)desktopDetailId=sd;else detailId=sd;}}catch{}
+  if(view==='detail'&&!detailId&&!desktopDetailId)view='list';
 }
 function handleSfReturn(){
   try{
@@ -2341,12 +2408,12 @@ async function boot(){
     const me=await api('/me');
     currentUser=me.user;
     await loadState();
-    view=restoreView();render();
+    view=restoreView();restoreDetail();render();
     handleSfReturn();
   }catch(e){
     if(e.code===401){return;/* renderLogin already shown by api() */}
     const cache=readCache();
-    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;campaigns=cache.campaigns||[];activeCampaignId=cache.activeCampaignId||(campaigns[0]&&campaigns[0].id)||null;view=restoreView();render();setStatus('offline');}
+    if(currentUser&&cache){donors=cache.donors||[];settings=Object.assign(defaultSettings(),cache.settings||{});dashState=cache.dashState||dashState;campaigns=cache.campaigns||[];activeCampaignId=cache.activeCampaignId||(campaigns[0]&&campaigns[0].id)||null;view=restoreView();restoreDetail();render();setStatus('offline');}
     else{renderLogin('Could not reach the server. Please try again.');}
   }
 }
