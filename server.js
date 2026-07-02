@@ -265,6 +265,8 @@ async function sfApiVersion() {
   return (Array.isArray(v) && v.length) ? v[v.length - 1].version : '60.0';
 }
 
+// Active = not archived and not in the recycle bin. Salesforce sync skips the rest.
+function isActiveContact(c) { return !c.status || c.status === 'active'; }
 function canSee(user, contact) {
   return user.role === 'admin'
     || contact.ownerId === user.id
@@ -862,7 +864,9 @@ app.post('/api/sf/push-contact', async (req, res) => {
 app.post('/api/sf/pull-contacts', requireAdmin, async (req, res) => {
   try {
     const ids = Array.isArray(req.body.contactIds) && req.body.contactIds.length ? req.body.contactIds : null;
-    const list = ids ? db.contacts.filter((c) => ids.includes(c.id)) : db.contacts;
+    // Sync active contacts only — never quietly rewrite archived / recycle-bin ones.
+    const active = db.contacts.filter(isActiveContact);
+    const list = ids ? active.filter((c) => ids.includes(c.id)) : active;
     const changes = await sfPullContacts(list);
     res.json({ ok: true, changes, scanned: list.length, at: db.meta.sfLastPullAt });
   } catch (e) { res.status(400).json({ error: e.message }); }
@@ -986,7 +990,7 @@ function scheduleSfSync() {
   const DAY = 24 * 60 * 60 * 1000;
   const run = () => {
     if (db.meta.salesforce && db.meta.salesforce.refreshToken) {
-      sfPullContacts(db.contacts)
+      sfPullContacts(db.contacts.filter(isActiveContact))
         .then((n) => console.log('[sf] daily contact pull: ' + n + ' change(s)'))
         .catch((e) => console.error('[sf] daily contact pull failed:', e.message));
     }
