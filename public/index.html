@@ -322,6 +322,7 @@ a{color:inherit;}
 .bin-name:hover{color:var(--brand);}
 .bin-actions{display:flex;gap:8px;flex-shrink:0;}
 .bin-empty{font-size:13px;color:var(--text-3);}
+.bin-scroll{max-height:300px;overflow:auto;}
 .danger-chip{color:var(--red);border-color:#f3c9c9;}
 .chai-toggle{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--text-2);cursor:pointer;line-height:1.4;}
 .chai-toggle input{margin-top:2px;width:16px;height:16px;flex-shrink:0;accent-color:var(--brand);}
@@ -1173,7 +1174,7 @@ function renderList(){
 // personal preference and applied to EVERY contact (their preferred layout),
 // persisted in localStorage. A few sections start collapsed by default.
 let sectionPref={};
-const SEC_CLOSED_DEFAULT=new Set(['access','profile','chai','history','remove']);
+const SEC_CLOSED_DEFAULT=new Set(['access','profile','chai','history','remove','set-archived','set-recycle','set-backups']);
 function loadSectionPref(){try{sectionPref=JSON.parse(localStorage.getItem('ot_sections_'+(currentUser&&currentUser.id)))||{};}catch{sectionPref={};}}
 function saveSectionPref(){try{localStorage.setItem('ot_sections_'+(currentUser&&currentUser.id),JSON.stringify(sectionPref));}catch{}}
 function secOpen(key){return (key in sectionPref)?!!sectionPref[key]:!SEC_CLOSED_DEFAULT.has(key);}
@@ -1475,15 +1476,11 @@ function renderSettings(){
     <button class="savebtn alt" id="fin-btn" style="margin-top:9px;">📊 Download Financial Snapshot (Excel)</button>
     <button class="savebtn alt" id="sample-btn" style="margin-top:9px;">📋 Download Sample Excel Template</button>
     <div class="shead">Archived & Recycle Bin</div>
-    <div class="card"><div class="ctitle">🗄 Archived (${archivedDonors().length})</div>
-      ${archivedDonors().length?archivedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button></div></div>`).join(''):'<div class="bin-empty">No archived contacts.</div>'}
-    </div>
-    <div class="card"><div class="ctitle">🗑 Recycle Bin (${trashedDonors().length})</div>
-      ${trashedDonors().length?trashedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button><button class="chip danger-chip" data-purge="${d.id}">Delete forever</button></div></div>`).join(''):'<div class="bin-empty">Recycle bin is empty.</div>'}
-    </div>
+    ${dcard('s','set-archived',`🗄 Archived (${archivedDonors().length})`,`<div class="bin-scroll">${archivedDonors().length?archivedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button></div></div>`).join(''):'<div class="bin-empty">No archived contacts.</div>'}</div>`)}
+    ${dcard('s','set-recycle',`🗑 Recycle Bin (${trashedDonors().length})`,`<div class="bin-scroll">${trashedDonors().length?trashedDonors().map(d=>`<div class="bin-row"><span class="bin-name" data-goto="${d.id}">${esc(d.name)}</span><div class="bin-actions"><button class="chip" data-restore="${d.id}">Restore</button><button class="chip danger-chip" data-purge="${d.id}">Delete forever</button></div></div>`).join(''):'<div class="bin-empty">Recycle bin is empty.</div>'}</div>`)}
     ${currentUser&&currentUser.role==='admin'?`<div class="shead">Data Backups</div>
-    <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Automatic snapshots of all your data — one is taken right before every import, and periodically as you work. If something goes wrong, restore a previous version.</p>
-    <div class="card"><div id="backup-list"><div class="bin-empty">Loading backups…</div></div></div>
+    <p style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;">Automatic snapshots of all your data — one is taken right before every import, and periodically as you work. Up to 40 are kept (newest first); older ones drop off. If something goes wrong, restore a previous version.</p>
+    ${dcard('s','set-backups','💾 Data Backups',`<div id="backup-list" class="bin-scroll"><div class="bin-empty">Loading backups…</div></div>`)}
     <div class="shead" style="color:var(--red);">Danger Zone</div>
     <div class="card" style="border-color:var(--red);">
       <div style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:11px;">Delete <b>every contact and every campaign</b> and start completely fresh. A backup is saved first, so you can still restore. This cannot be undone otherwise.</div>
