@@ -664,9 +664,9 @@ function isPledged(d){return(d.pledgeAmount&&d.pledgeAmount>0)||(d.preArcStage>=
 function isFulfilled(d){return d.pledgeAmount>0&&(d.pledgePaid||0)>=d.pledgeAmount;}
 function taskDueStatus(d){if(!d)return'upcoming';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);return diff<0?'overdue':diff===0?'today':'upcoming';}
 function taskDueLabel(d){if(!d)return'';const diff=Math.floor((new Date(d+'T12:00:00')-new Date().setHours(0,0,0,0))/86400000);if(diff<0)return`${Math.abs(diff)}d overdue`;if(diff===0)return'Due today';if(diff===1)return'Due tomorrow';return'Due '+new Date(d+'T12:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'});}
-// A pending task belongs to whoever created it. Only its creator sees it.
-// Legacy tasks (no creator recorded) stay visible to anyone with contact access.
-function pendingVisible(t){return !t.by||t.by===(currentUser&&currentUser.id);}
+// Tasks are shared: anyone who can see the contact sees its tasks (like the
+// interaction history). We still record `by` for attribution ("added by …").
+function pendingVisible(t){return true;}
 function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t)).map(t=>({...t,donorId:d.id,donorName:d.name})));}
 function overdueTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='overdue');}
 function todayTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='today');}
@@ -1299,10 +1299,10 @@ function renderDetail(id){
       <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--brand);">${isPost?'Personal touches':'📞 Retail'}: ${ret} of ${d.retailTarget||1}</span><span>${rPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${rPct}%;background:var(--brand);"></div></div></div>
       <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--amber);">${isPost?'Reports/newsletters':'📄 Wholesale'}: ${who} of ${d.wholesaleTarget||1}</span><span>${wPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${wPct}%;background:var(--amber);"></div></div></div>`)}
     ${dcard(did,'log','Log Interaction',`
+      <div style="margin-bottom:8px;"><label class="field-lbl">Type</label>${typeSelect}</div>
       <div style="display:flex;gap:8px;margin-bottom:8px;">
-        <div style="flex:1;"><label class="field-lbl">Type</label>${typeSelect}</div>
-        <div style="flex:1;"><label class="field-lbl">Spoke with</label><select class="inp" id="spouse-sel" style="width:100%;">${spouseOpts}</select></div>
-        <div style="flex:1;"><label class="field-lbl">Date</label><input class="inp" id="log-date" type="date" value="${today()}"/></div>
+        <div style="flex:2;"><label class="field-lbl">Spoke with</label><select class="inp" id="spouse-sel" style="width:100%;">${spouseOpts}</select></div>
+        <div style="flex:1;"><label class="field-lbl">Date</label><input class="inp" id="log-date" type="date" value="${today()}" style="width:100%;"/></div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px;align-items:flex-start;">
         <textarea class="logta" id="log-note" placeholder="Notes…" style="flex:1;"></textarea>
