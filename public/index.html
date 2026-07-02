@@ -196,7 +196,8 @@ a{color:inherit;}
 .chead:hover{background:var(--surface-2);}
 .chead-t{flex:1;}
 .chead-x{display:flex;align-items:center;gap:7px;flex-shrink:0;}
-.coll-chev{flex-shrink:0;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--brand-soft);color:var(--brand);font-size:12px;font-weight:800;line-height:1;}
+.coll-chev{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;padding:4px 11px;border-radius:999px;background:var(--brand);color:#fff;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;line-height:1;white-space:nowrap;}
+.chead:hover .coll-chev{background:var(--brand-strong);}
 .card.collapsed .chead{margin-bottom:-5px;}
 .card.collapsed .cbody{display:none;}
 .tgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;text-align:center;margin-bottom:12px;}
@@ -1178,7 +1179,7 @@ function saveSectionPref(){try{localStorage.setItem('ot_sections_'+(currentUser&
 function secOpen(key){return (key in sectionPref)?!!sectionPref[key]:!SEC_CLOSED_DEFAULT.has(key);}
 function dcard(did,key,title,body,extra){
   const open=secOpen(key);
-  return `<div class="card${open?'':' collapsed'}"><div class="ctitle chead" data-collhead="${key}"><span class="chead-t">${title}</span>${extra?`<span class="chead-x">${extra}</span>`:''}<span class="coll-chev">${open?'▾':'▸'}</span></div><div class="cbody">${body}</div></div>`;
+  return `<div class="card${open?'':' collapsed'}"><div class="ctitle chead" data-collhead="${key}"><span class="chead-t">${title}</span>${extra?`<span class="chead-x">${extra}</span>`:''}<span class="coll-chev">${open?'Hide ▴':'Show ▾'}</span></div><div class="cbody">${body}</div></div>`;
 }
 function renderDetail(id){
   const did=id||detailId;
@@ -1890,7 +1891,7 @@ function attachEvents(){
     const k=el.dataset.collhead;const card=el.closest('.card');if(!card)return;
     const next=card.classList.contains('collapsed');
     sectionPref[k]=next;saveSectionPref();card.classList.toggle('collapsed',!next);
-    const chev=el.querySelector('.coll-chev');if(chev)chev.textContent=next?'▾':'▸';
+    const chev=el.querySelector('.coll-chev');if(chev)chev.textContent=next?'Hide ▴':'Show ▾';
   }));
   document.getElementById('assign-btn')?.addEventListener('click',()=>showAssignModal(activeDetailId));
   document.getElementById('del-contact-btn')?.addEventListener('click',()=>showRemoveOptions(activeDetailId));
