@@ -546,6 +546,27 @@ a{color:inherit;}
 .cm-meta{font-size:12px;color:var(--text-3);margin-top:2px;}
 .cm-acts{display:flex;gap:6px;flex-wrap:wrap;}
 .cm-acts .chip[disabled]{opacity:.4;cursor:default;}
+/* AI assistant */
+#ai-fab{position:fixed;right:18px;bottom:78px;z-index:60;width:52px;height:52px;border-radius:50%;border:none;background:var(--brand);color:#fff;font-size:24px;box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:transform .15s;}
+#ai-fab:hover{transform:scale(1.06);}
+@media(min-width:900px){#ai-fab{bottom:24px;right:24px;}}
+.ai-overlay{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.35);display:flex;align-items:flex-end;justify-content:center;}
+@media(min-width:640px){.ai-overlay{align-items:center;}}
+.ai-panel{background:var(--surface,#fff);width:100%;max-width:520px;height:86vh;max-height:680px;border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 -4px 30px rgba(0,0,0,.3);}
+@media(min-width:640px){.ai-panel{border-radius:16px;height:70vh;}}
+.ai-hdr{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border);font-weight:800;font-size:15px;}
+.ai-hdr button{background:none;border:none;font-size:24px;line-height:1;color:var(--text-3);cursor:pointer;}
+.ai-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:9px;}
+.ai-b{max-width:82%;padding:9px 12px;border-radius:14px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;}
+.ai-u{align-self:flex-end;background:var(--brand);color:#fff;border-bottom-right-radius:4px;}
+.ai-a{align-self:flex-start;background:var(--bg-2,rgba(0,0,0,.05));color:var(--text);border-bottom-left-radius:4px;}
+.ai-typing{opacity:.6;letter-spacing:2px;}
+.ai-note{align-self:center;font-size:12px;color:var(--text-3);text-align:center;max-width:90%;}
+.ai-act{font-size:13.5px;margin:2px 0;}
+.ai-crow{display:flex;gap:8px;margin-top:10px;justify-content:flex-end;}
+.ai-input-row{display:flex;gap:7px;align-items:flex-end;padding:10px 12px;border-top:1px solid var(--border);}
+.ai-input-row textarea{flex:1;resize:none;border:1px solid var(--border-2,var(--border));border-radius:10px;padding:9px 11px;font-size:14px;font-family:inherit;max-height:120px;background:var(--surface,#fff);color:var(--text);}
+.ai-send{border:none;background:var(--brand);color:#fff;width:40px;height:40px;border-radius:10px;font-size:16px;cursor:pointer;flex:none;}
 </style>
 </head>
 <body>
@@ -1836,6 +1857,71 @@ function render(){
   if(samePlace){SCROLLERS.forEach(s=>{const el=document.querySelector(s);if(el&&saved[s]!=null)el.scrollTop=saved[s];});if(saved.__win!=null)window.scrollTo(0,saved.__win);}
   lastRenderKey=renderKey();
   try{if(currentUser){localStorage.setItem('ot_view_'+currentUser.id,view);const ad=isDesktop?desktopDetailId:detailId;if(ad)localStorage.setItem('ot_detail_'+currentUser.id,ad);else localStorage.removeItem('ot_detail_'+currentUser.id);}}catch{}
+  ensureAssistantUI();
+}
+
+// ── AI ASSISTANT (chat) ─────────────────────────────────────────────
+let assistantOn=false, aiMsgs=[], aiBusy=false;
+function ensureAssistantUI(){
+  let fab=document.getElementById('ai-fab');
+  if(!assistantOn||!currentUser){if(fab)fab.style.display='none';const ov=document.getElementById('ai-overlay');if(ov)ov.remove();return;}
+  if(!fab){
+    fab=document.createElement('button');fab.id='ai-fab';fab.title='Assistant';fab.innerHTML='✨';
+    fab.onclick=openAssistant;document.body.appendChild(fab);
+  }
+  fab.style.display='';
+}
+function aiBubbleHTML(m){
+  if(m.role==='user')return `<div class="ai-b ai-u">${esc(m.text)}</div>`;
+  if(m.role==='assistant')return `<div class="ai-b ai-a">${esc(m.text)}</div>`;
+  if(m.role==='confirm')return `<div class="ai-b ai-a"><div style="margin-bottom:8px;font-weight:700;">Ready to apply:</div>${m.actions.map(a=>`<div class="ai-act">• ${esc(a.label||a.kind)}</div>`).join('')}<div class="ai-crow"><button class="mbtn s" data-aicancel="${m.id}">Cancel</button><button class="mbtn p" data-aiconfirm="${m.id}">Confirm</button></div></div>`;
+  if(m.role==='note')return `<div class="ai-note">${esc(m.text)}</div>`;
+  return '';
+}
+function renderAiMsgs(){const el=document.getElementById('ai-msgs');if(!el)return;
+  el.innerHTML=aiMsgs.map(aiBubbleHTML).join('')+(aiBusy?'<div class="ai-b ai-a ai-typing">…</div>':'');
+  el.scrollTop=el.scrollHeight;
+  el.querySelectorAll('[data-aiconfirm]').forEach(b=>b.onclick=()=>applyAssistant(b.dataset.aiconfirm));
+  el.querySelectorAll('[data-aicancel]').forEach(b=>b.onclick=()=>{const m=aiMsgs.find(x=>String(x.id)===b.dataset.aicancel);if(m){m.role='note';m.text='Cancelled.';}renderAiMsgs();});
+}
+function openAssistant(){
+  if(document.getElementById('ai-overlay'))return;
+  const ov=document.createElement('div');ov.id='ai-overlay';ov.className='ai-overlay';
+  ov.innerHTML=`<div class="ai-panel">
+    <div class="ai-hdr"><span>✨ Assistant</span><button id="ai-close" title="Close">×</button></div>
+    <div class="ai-msgs" id="ai-msgs"></div>
+    <div class="ai-input-row">
+      <textarea id="ai-input" rows="1" placeholder="e.g. Log a call with the Levys and follow up Friday"></textarea>
+      <button class="micbtn" id="mic-ai-input" title="Voice">🎤</button>
+      <button class="ai-send" id="ai-send" title="Send">➤</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.getElementById('ai-close').onclick=()=>ov.remove();
+  document.getElementById('ai-send').onclick=sendAssistant;
+  document.getElementById('mic-ai-input').onclick=()=>{if(micActive&&micTarget==='ai-input')stopMic();else startMic('ai-input');};
+  const inp=document.getElementById('ai-input');
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAssistant();}});
+  if(!aiMsgs.length)aiMsgs=[{role:'note',text:'Tell me what happened and what to set up — I\'ll prepare it for you to confirm.'}];
+  renderAiMsgs();setTimeout(()=>inp.focus(),50);
+}
+function sendAssistant(){
+  const inp=document.getElementById('ai-input');if(!inp)return;
+  const text=inp.value.trim();if(!text||aiBusy)return;
+  inp.value='';aiMsgs.push({role:'user',text});aiBusy=true;renderAiMsgs();
+  api('/assistant',{method:'POST',body:JSON.stringify({message:text})})
+    .then(r=>{aiBusy=false;if(r.reply)aiMsgs.push({role:'assistant',text:r.reply});
+      if(r.actions&&r.actions.length)aiMsgs.push({role:'confirm',id:Date.now(),actions:r.actions});
+      renderAiMsgs();})
+    .catch(e=>{aiBusy=false;aiMsgs.push({role:'note',text:'⚠️ '+(e.message||'Something went wrong.')});renderAiMsgs();});
+}
+function applyAssistant(id){
+  const m=aiMsgs.find(x=>String(x.id)===String(id));if(!m||m.applying)return;m.applying=true;
+  const actions=m.actions;m.role='note';m.text='Applying…';renderAiMsgs();
+  api('/assistant/apply',{method:'POST',body:JSON.stringify({actions})})
+    .then(async r=>{m.text='✓ Done — '+(r.applied||0)+' change'+(r.applied===1?'':'s')+' saved.';
+      await loadState();render();openAssistant();renderAiMsgs();})
+    .catch(e=>{m.text='⚠️ Could not apply: '+(e.message||'error');renderAiMsgs();});
 }
 
 // ── EVENTS ─────────────────────────────────────────────────────────
@@ -2337,7 +2423,7 @@ function renderReset(){
 async function loadState(){
   const s=await api('/state');
   currentUser=s.me;allUsers=s.users||[];
-  sfConnected=!!s.sfConnected;
+  sfConnected=!!s.sfConnected;assistantOn=!!s.assistant;
   donors=s.contacts||[];
   settings=Object.assign(defaultSettings(),s.settings||{});
   campaigns=s.campaigns||[];

@@ -12,6 +12,11 @@ const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
 const nodemailer = require('nodemailer');
+// AI assistant (optional). Loaded lazily so the server still boots if the
+// dependency isn't installed yet (e.g. during a hot-load before npm install).
+let Anthropic = null;
+try { Anthropic = require('@anthropic-ai/sdk'); }
+catch (e) { console.warn('[outreach] @anthropic-ai/sdk not installed — AI assistant disabled until deps are installed'); }
 
 const PORT = parseInt(process.env.PORT, 10) || 3000;
 const DATA_DIR = process.env.DATA_DIR || '/data';
@@ -437,6 +442,7 @@ app.get('/api/state', (req, res) => {
     campaigns: db.campaigns,
     users: db.users.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role })),
     sfConnected: !!(db.meta.salesforce && db.meta.salesforce.refreshToken),
+    assistant: assistantEnabled(),
   });
 });
 
@@ -1005,6 +1011,206 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
   delete db.dashByUser[user.id];
   persist();
   res.json({ ok: true });
+});
+
+// ── AI ASSISTANT ───────────────────────────────────────────────────────────────
+// Natural-language commands ("I just called Barbra, add a follow-up in a few days")
+// turned into actions via Claude tool-use. Write actions are STAGED and returned to
+// the client for confirmation; /api/assistant/apply performs the actual mutations.
+const ASSISTANT_MODEL = process.env.ASSISTANT_MODEL || 'claude-haiku-4-5';
+let anthropicClient = null;
+function getAnthropic() {
+  if (!Anthropic || !process.env.ANTHROPIC_API_KEY) return null;
+  if (!anthropicClient) anthropicClient = new Anthropic();
+  return anthropicClient;
+}
+function assistantEnabled() { return !!getAnthropic(); }
+
+const INT_TYPE_MAP = {
+  call: '📞 Call', text: '💬 Text', email: '📧 Email', meeting: '🤝 Meeting',
+  voicemail: '📮 Voicemail', other: '📝 Other', report: '📄 Report', newsletter: '📰 Newsletter',
+};
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function activeContact(c) { return !c.status || c.status === 'active'; }
+function clip(s, n) { s = String(s || ''); return s.length > n ? s.slice(0, n) + '…' : s; }
+
+function contactSummary(c) {
+  const ints = c.interactions || [];
+  const last = ints[ints.length - 1];
+  const open = (c.tasks || []).filter((t) => !t.done);
+  return {
+    id: c.id, name: c.name, city: c.city || '', tier: c.tier || '',
+    lastInteraction: last ? { type: last.type, date: last.date || '', note: clip(last.note, 100) } : null,
+    interactionCount: ints.length,
+    openTasks: open.map((t) => ({ note: clip(t.note, 80), due: t.due || '', type: t.type || '' })),
+    pledgeAmount: c.pledgeAmount || 0, pledgePaid: c.pledgePaid || 0,
+  };
+}
+function visibleContacts(user) { return db.contacts.filter((c) => canSee(user, c) && activeContact(c)); }
+function assistantContact(user, id) {
+  const c = db.contacts.find((x) => x.id === id);
+  return c && canSee(user, c) ? c : null;
+}
+
+const ASSISTANT_TOOLS = [
+  { name: 'find_contacts', description: 'Search contacts by person or household name. ALWAYS call this to get a contactId before logging an interaction, creating a task, or editing a pledge/tier. Returns matches with recent activity.',
+    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'name or partial name' } }, required: ['query'] } },
+  { name: 'list_contacts', description: 'List contacts matching a filter, for questions like "who haven\'t I called" or "who has overdue tasks".',
+    input_schema: { type: 'object', properties: {
+      filter: { type: 'string', enum: ['not_contacted', 'overdue_tasks', 'not_contacted_recently', 'by_tier'] },
+      days: { type: 'integer', description: 'for not_contacted_recently: number of days since last contact' },
+      tier: { type: 'string', enum: ['star', 'major', 'mid', 'general'] },
+    }, required: ['filter'] } },
+  { name: 'log_interaction', description: 'Record an interaction that ALREADY happened with a contact. Staged for user confirmation — not applied immediately.',
+    input_schema: { type: 'object', properties: {
+      contactId: { type: 'string' },
+      type: { type: 'string', enum: ['call', 'text', 'email', 'meeting', 'voicemail', 'other', 'report', 'newsletter'] },
+      note: { type: 'string', description: 'what was discussed' },
+      date: { type: 'string', description: 'YYYY-MM-DD; defaults to today' },
+      spokeWith: { type: 'string', description: 'who you spoke with (optional)' },
+    }, required: ['contactId', 'type'] } },
+  { name: 'create_task', description: 'Create a future follow-up task for a contact. Staged for confirmation.',
+    input_schema: { type: 'object', properties: {
+      contactId: { type: 'string' },
+      note: { type: 'string' },
+      type: { type: 'string', enum: ['call', 'text', 'email', 'meeting', 'voicemail', 'other'] },
+      dueDate: { type: 'string', description: 'YYYY-MM-DD; resolve relative dates ("in a few days", "next week") using today\'s date' },
+    }, required: ['contactId', 'note'] } },
+  { name: 'update_pledge', description: 'Set a contact\'s pledge amount and/or record a pledge payment received. Staged for confirmation.',
+    input_schema: { type: 'object', properties: {
+      contactId: { type: 'string' },
+      pledgeAmount: { type: 'number', description: 'total pledge amount to set' },
+      paymentAmount: { type: 'number', description: 'a payment received to record' },
+    }, required: ['contactId'] } },
+  { name: 'set_tier', description: 'Change a contact\'s tier. Staged for confirmation.',
+    input_schema: { type: 'object', properties: {
+      contactId: { type: 'string' }, tier: { type: 'string', enum: ['star', 'major', 'mid', 'general'] },
+    }, required: ['contactId', 'tier'] } },
+];
+
+function runAssistantTool(user, name, input, staged) {
+  input = input || {};
+  if (name === 'find_contacts') {
+    const q = String(input.query || '').toLowerCase().trim();
+    if (!q) return { matches: [] };
+    const hit = (c) => [c.name, c.pName, c.sName].some((n) => String(n || '').toLowerCase().includes(q));
+    return { matches: visibleContacts(user).filter(hit).slice(0, 8).map(contactSummary) };
+  }
+  if (name === 'list_contacts') {
+    const today = todayStr();
+    let pool = visibleContacts(user);
+    if (input.filter === 'not_contacted') pool = pool.filter((c) => (c.interactions || []).length === 0);
+    else if (input.filter === 'overdue_tasks') pool = pool.filter((c) => (c.tasks || []).some((t) => !t.done && t.due && t.due < today));
+    else if (input.filter === 'by_tier') pool = pool.filter((c) => c.tier === input.tier);
+    else if (input.filter === 'not_contacted_recently') {
+      const days = input.days || 14;
+      const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      pool = pool.filter((c) => { const ins = c.interactions || []; const last = ins[ins.length - 1]; return !last || !last.date || last.date < cutoff; });
+    }
+    return { count: pool.length, contacts: pool.slice(0, 25).map(contactSummary) };
+  }
+  // ── write tools: stage, don't mutate ──
+  const c = assistantContact(user, input.contactId);
+  if (!c) return { error: 'contact not found or you do not have access — call find_contacts first' };
+  if (name === 'log_interaction') {
+    const type = INT_TYPE_MAP[String(input.type || 'other').toLowerCase()] || '📝 Other';
+    const a = { kind: 'log_interaction', contactId: c.id, contactName: c.name, type, note: input.note || '', date: input.date || todayStr(), spokeWith: input.spokeWith || '' };
+    a.label = `${type} — ${c.name}` + (input.note ? `: "${clip(input.note, 60)}"` : '') + (a.date !== todayStr() ? ` (${a.date})` : '');
+    staged.push(a); return { staged: true, summary: a.label };
+  }
+  if (name === 'create_task') {
+    const taskType = INT_TYPE_MAP[String(input.type || 'call').toLowerCase()] || '📞 Call';
+    const a = { kind: 'create_task', contactId: c.id, contactName: c.name, taskType, note: input.note || '', dueDate: input.dueDate || '' };
+    a.label = `Task (${taskType}) — ${c.name}` + (input.note ? `: "${clip(input.note, 60)}"` : '') + (input.dueDate ? ` due ${input.dueDate}` : ' (no due date)');
+    staged.push(a); return { staged: true, summary: a.label };
+  }
+  if (name === 'update_pledge') {
+    const a = { kind: 'update_pledge', contactId: c.id, contactName: c.name };
+    const parts = [];
+    if (typeof input.pledgeAmount === 'number') { a.pledgeAmount = input.pledgeAmount; parts.push(`pledge $${input.pledgeAmount.toLocaleString()}`); }
+    if (typeof input.paymentAmount === 'number' && input.paymentAmount > 0) { a.paymentAmount = input.paymentAmount; parts.push(`payment $${input.paymentAmount.toLocaleString()}`); }
+    if (!parts.length) return { error: 'nothing to update — provide pledgeAmount or paymentAmount' };
+    a.label = `${c.name}: ${parts.join(', ')}`;
+    staged.push(a); return { staged: true, summary: a.label };
+  }
+  if (name === 'set_tier') {
+    const a = { kind: 'set_tier', contactId: c.id, contactName: c.name, tier: input.tier };
+    a.label = `${c.name} → ${input.tier} tier`;
+    staged.push(a); return { staged: true, summary: a.label };
+  }
+  return { error: 'unknown tool' };
+}
+
+app.post('/api/assistant', async (req, res) => {
+  if (!assistantEnabled()) return res.status(503).json({ error: 'The AI assistant isn’t set up yet. An admin needs to add an ANTHROPIC_API_KEY on the server.' });
+  const message = String((req.body && req.body.message) || '').trim();
+  if (!message) return res.status(400).json({ error: 'Please type a message.' });
+  const sys = `You are the built-in assistant in "Outreach Tracker", a donor-outreach app. The current user is ${req.user.name}. Today's date is ${todayStr()}.
+Turn the user's request into actions using the tools.
+- ALWAYS call find_contacts to resolve a person/household to a contactId before logging an interaction, creating a task, or editing a pledge/tier. Never invent a contactId.
+- If find_contacts returns more than one plausible match, ask the user which one rather than guessing. If it returns none, say you couldn't find them.
+- Interactions are things that ALREADY happened; tasks are FUTURE follow-ups. If the user both did something and wants a follow-up, do both.
+- Resolve relative dates ("in a few days", "next week", "Friday") to an absolute YYYY-MM-DD using today's date.
+- Write actions (log_interaction, create_task, update_pledge, set_tier) are STAGED for the user to confirm — they are NOT applied yet. After staging, reply with one short friendly sentence describing what you've prepared. Do NOT say it's done or saved.
+- For pure questions, answer concisely from the tools.
+- Keep replies short and warm. Never show contactIds or raw JSON to the user.`;
+  const messages = [{ role: 'user', content: message }];
+  const staged = [];
+  try {
+    const client = getAnthropic();
+    let reply = '';
+    for (let i = 0; i < 6; i++) {
+      const resp = await client.messages.create({ model: ASSISTANT_MODEL, max_tokens: 1024, system: sys, tools: ASSISTANT_TOOLS, messages });
+      const text = resp.content.filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
+      if (text) reply = text;
+      if (resp.stop_reason !== 'tool_use') break;
+      messages.push({ role: 'assistant', content: resp.content });
+      const results = [];
+      for (const b of resp.content) {
+        if (b.type !== 'tool_use') continue;
+        let out;
+        try { out = runAssistantTool(req.user, b.name, b.input, staged); }
+        catch (e) { out = { error: String((e && e.message) || e) }; }
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(out) });
+      }
+      messages.push({ role: 'user', content: results });
+    }
+    res.json({ reply: reply || 'Done.', actions: staged });
+  } catch (e) {
+    console.error('assistant error', e);
+    res.status(500).json({ error: 'The assistant hit an error. ' + ((e && e.message) || '') });
+  }
+});
+
+app.post('/api/assistant/apply', (req, res) => {
+  const actions = Array.isArray(req.body && req.body.actions) ? req.body.actions : [];
+  let applied = 0;
+  for (const a of actions) {
+    const c = a && assistantContact(req.user, a.contactId);
+    if (!c) continue;
+    if (a.kind === 'log_interaction') {
+      c.interactions = c.interactions || [];
+      c.interactions.push({ id: Date.now() + Math.floor(Math.random() * 1000), type: a.type || '📝 Other', date: a.date || todayStr(), note: a.note || '', spouse: a.spokeWith || '', by: req.user.id });
+    } else if (a.kind === 'create_task') {
+      c.tasks = c.tasks || [];
+      c.tasks.push({ id: Date.now() + Math.floor(Math.random() * 1000), note: a.note || '', due: a.dueDate || '', type: a.taskType || '📞 Call', done: false, by: req.user.id });
+    } else if (a.kind === 'update_pledge') {
+      if (typeof a.pledgeAmount === 'number') c.pledgeAmount = a.pledgeAmount;
+      if (typeof a.paymentAmount === 'number' && a.paymentAmount > 0) {
+        c.payments = c.payments || [];
+        c.payments.push({ id: Date.now() + Math.floor(Math.random() * 1000), amount: a.paymentAmount, date: todayStr() });
+        c.pledgePaid = c.payments.reduce((s, p) => s + (p.amount || 0), 0);
+      }
+    } else if (a.kind === 'set_tier') {
+      c.tier = a.tier;
+      const td = defaultSettings().tierDefaults[a.tier];
+      if (td) { c.retailTarget = td.retail; c.wholesaleTarget = td.wholesale; }
+    } else { continue; }
+    c.updatedAt = Date.now(); c.updatedBy = req.user.id;
+    applied++;
+  }
+  if (applied) persist();
+  res.json({ ok: true, applied });
 });
 
 // ── STATIC FRONTEND ────────────────────────────────────────────────────────────
