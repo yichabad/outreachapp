@@ -29,7 +29,7 @@ function defaultSettings() {
       star: { retail: 4, wholesale: 4 }, major: { retail: 3, wholesale: 4 },
       mid: { retail: 2, wholesale: 4 }, general: { retail: 1, wholesale: 4 },
     },
-    dailyGoal: 10, dashSort: 'tier',
+    dailyGoal: 10, dashSort: 'tier', countMode: 'all',
   };
 }
 

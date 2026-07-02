@@ -296,6 +296,7 @@ a{color:inherit;}
 .tchk.done{background:var(--emer);border-color:var(--emer);color:#fff;}
 .ttxt{flex:1;font-size:13.5px;color:var(--text);line-height:1.45;cursor:pointer;}
 .tby{font-size:11px;color:var(--text-3);margin-top:3px;font-weight:600;}
+.ttype{display:inline-block;font-size:11px;font-weight:700;background:var(--chip-bg,rgba(0,0,0,0.05));color:var(--text-2,var(--text));padding:1px 7px;border-radius:20px;margin-right:4px;white-space:nowrap;}
 .tdue{font-size:11px;margin-top:3px;font-weight:700;}
 .tdue.overdue{color:var(--red);}
 .tdue.today{color:var(--amber);}
@@ -573,7 +574,7 @@ const HEBREW_EFFORT='ולא אתה בן חורין להבטל ממנה';
 
 // ── PERSISTENCE / API ─────────────────────────────────────────────
 let APP_BASE=window.APP_BASE||''; if(APP_BASE.indexOf('%')>-1)APP_BASE='';
-function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier',campaignGoals:{}};}
+function defaultSettings(){return{tierDefaults:{star:{retail:4,wholesale:4},major:{retail:3,wholesale:4},mid:{retail:2,wholesale:4},general:{retail:1,wholesale:4}},dailyGoal:10,dashSort:'tier',countMode:'all',campaignGoals:{}};}
 
 function api(path,opts){
   return fetch(APP_BASE+'/api'+path,Object.assign({headers:{'Content-Type':'application/json'},credentials:'same-origin'},opts||{}))
@@ -670,8 +671,12 @@ function getAllTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t
 function overdueTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='overdue');}
 function todayTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='today');}
 function upcomingTasks(){return getAllTasks().filter(t=>taskDueStatus(t.due)==='upcoming').sort((a,b)=>(a.due||'').localeCompare(b.due||''));}
-// Completed tasks are shared: anyone who can see the contact sees them, newest first.
-function completedTasks(){return campaignDonors().flatMap(d=>(d.tasks||[]).filter(t=>t.done).map(t=>({...t,donorId:d.id,donorName:d.name}))).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));}
+// A completed task becomes an interaction in history, so there's no separate
+// "completed tasks" list any more — the record lives on the contact's timeline.
+function isCallType(t){return String(t||'').includes('Call');}
+// Daily counter: interactions I logged today, optionally narrowed to calls only.
+function countedToday(){const me=currentUser&&currentUser.id;const t=today();const callsOnly=settings.countMode==='calls';
+  return campaignDonors().reduce((n,d)=>n+(d.interactions||[]).filter(i=>i.by===me&&i.date===t&&(!callsOnly||isCallType(i.type))).length,0);}
 function userName(id){const u=allUsers.find(x=>x.id===id);return u?(u.name||u.email):'';}
 
 function getStreak(){return dashState.streak||{date:'',count:0,lastGoal:0};}
@@ -1072,10 +1077,12 @@ function renderBars(context){
 }
 
 // ── RENDER: DASHBOARD ──────────────────────────────────────────────
+// Task-focused: your due + overdue tasks up top (check one off and it logs to
+// the contact's history), then auto-suggested contacts to reach next. The goal
+// ring counts interactions you logged today (all, or calls only — your choice).
 function renderDashboard(){
-  const calls=getDashCalls();
   const goal=settings.dailyGoal||10;
-  const doneCt=dashState.doneCalls.filter(id=>calls.find(d=>d.id===id)).length;
+  const doneCt=countedToday();
   const remaining=Math.max(0,goal-doneCt);
   const pct=goal>0?Math.min(100,Math.round(doneCt/goal*100)):0;
   const hour=new Date().getHours();
@@ -1083,20 +1090,40 @@ function renderDashboard(){
   const first=(currentUser&&currentUser.name||'').split(' ')[0];
   const radius=36,circ=2*Math.PI*radius;
   const dash=circ*(1-pct/100);
+  const callsOnly=settings.countMode==='calls';
 
-  const callCards=calls.map(d=>{
-    const isDone=dashState.doneCalls.includes(d.id);
-    const hasOD=overdueTasks().some(t=>t.donorId===d.id);
-    const tc=TIER_CFG[d.tier]||TIER_NONE;
-    return`<div class="call-card${isDone?' done-card':''}" id="cc-${d.id}" data-cardopen="${d.id}" style="cursor:pointer;">
+  // Today's actionable tasks: overdue first, then due today.
+  const dueTasks=[...overdueTasks(),...todayTasks()];
+  const taskDonorIds=new Set(dueTasks.map(t=>t.donorId));
+  const taskCards=dueTasks.map(t=>{
+    const d=getDonor(t.donorId);if(!d)return'';
+    const st=taskDueStatus(t.due);
+    return`<div class="call-card" data-cardopen="${t.donorId}" style="cursor:pointer;">
       <div class="call-info">
         <div class="call-name">${esc(d.name)}</div>
-        <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · <span class="dt dt-h"><i>H</i>${fmtT(d.high)}</span> <span class="dt dt-m"><i>M</i>${fmtT(d.medium)}</span> <span class="dt dt-l"><i>L</i>${fmtT(d.low)}</span>${hasOD?' · <span style="color:var(--red);">⚠️ overdue task</span>':''}</div>
+        <div class="call-meta"><span class="ttype">${esc(t.type||'📞 Call')}</span> ${esc(t.note||'')} · <span class="tdue ${st}">${t.due?taskDueLabel(t.due):'No due date'}</span></div>
+        ${d.pPhone?`<a class="call-phone" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''}
+      </div>
+      <div class="call-right">
+        <button class="done-btn" data-tasklog="${t.donorId}|${t.id}">Done</button>
+        <button class="open-btn" data-opend="${t.donorId}">Open →</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Suggestions: who to reach next — contacts without a task already due.
+  const suggestions=getDashCalls().filter(d=>!taskDonorIds.has(d.id));
+  const sugCards=suggestions.map(d=>{
+    const tc=TIER_CFG[d.tier]||TIER_NONE;
+    return`<div class="call-card" data-cardopen="${d.id}" style="cursor:pointer;">
+      <div class="call-info">
+        <div class="call-name">${esc(d.name)}</div>
+        <div class="call-meta"><span style="color:${tc.color}">${tc.label}</span> · <span class="dt dt-h"><i>H</i>${fmtT(d.high)}</span> <span class="dt dt-m"><i>M</i>${fmtT(d.medium)}</span> <span class="dt dt-l"><i>L</i>${fmtT(d.low)}</span></div>
         ${d.pPhone?`<a class="call-phone" href="tel:${esc(d.pPhone)}">📞 ${esc(d.pPhone)}</a>`:''}
         ${miniBarsHTML(d,isPledged(d))}
       </div>
       <div class="call-right">
-        <button class="done-btn${isDone?' completed':''}" data-dashcall="${d.id}">${isDone?'✓ Done':'Mark Done'}</button>
+        <button class="done-btn" data-suglog="${d.id}">Log</button>
         <button class="open-btn" data-opend="${d.id}">Open →</button>
       </div>
     </div>`;
@@ -1122,12 +1149,18 @@ function renderDashboard(){
         <div class="ring-pct">${pct}%</div>
       </div>
       <div class="goal-info">
-        <div class="goal-label">Today's calls</div>
+        <div class="goal-label">Today's ${callsOnly?'calls':'outreach'}</div>
         <div class="goal-big">${doneCt} <span style="font-size:16px;opacity:0.7;">/ ${goal}</span></div>
-        <div class="goal-sub">${remaining===0?'🏆 Goal reached!':remaining+' remaining'}</div>
+        <div class="goal-sub">${remaining===0?'🏆 Goal reached!':remaining+' to go'}</div>
         ${(()=>{const sc=displayStreakCount();return sc>1?`<div class="streak">🔥 ${sc} day streak</div>`:'';})()}
         <div class="goal-picker"><label>Goal:</label><input id="daily-goal-inp" type="number" min="1" max="100" value="${goal}"/></div>
-        <div class="sort-picker"><label>Sort by:</label>
+        <div class="sort-picker"><label>Count:</label>
+          <select id="dash-count-sel">
+            <option value="all" ${!callsOnly?'selected':''}>All interactions</option>
+            <option value="calls" ${callsOnly?'selected':''}>Calls only</option>
+          </select>
+        </div>
+        <div class="sort-picker"><label>Suggest by:</label>
           <select id="dash-sort-sel">
             <option value="tier" ${settings.dashSort==='tier'?'selected':''}>Tier + Target</option>
             <option value="target" ${settings.dashSort==='target'?'selected':''}>Target $</option>
@@ -1137,8 +1170,8 @@ function renderDashboard(){
       </div>
     </div>
     ${campaignDonors().length===0?`<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">No contacts in this campaign yet.<br/>Import your Excel file or add a contact to get started.<br/><button onclick="downloadSample()" class="empty-link" style="margin-top:8px;">Download sample template</button></div></div>`
-    :calls.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">All courting contacts have been reached!<br/>Check the Contacts tab.</div></div>`
-    :`<div class="list-head">Today's Call List</div>${callCards}`}
+    :`${dueTasks.length?`<div class="list-head">Today's Tasks (${dueTasks.length})</div>${taskCards}`:`<div class="empty" style="padding:22px 0;"><div class="empty-icon">✅</div><div class="empty-txt">No tasks due today. Nice work!</div></div>`}
+       ${suggestions.length?`<div class="list-head" style="margin-top:20px;">Who to reach next</div>${sugCards}`:''}`}
   </div>`;
 }
 
@@ -1191,16 +1224,14 @@ function renderDetail(id){
   const ret=(d.interactions||[]).filter(i=>!['📄 Report','📰 Newsletter'].includes(i.type)).length;
   const who=(d.interactions||[]).filter(i=>['📄 Report','📰 Newsletter'].includes(i.type)).length;
   const rPct=Math.min(100,Math.round(ret/(d.retailTarget||1)*100)),wPct=Math.min(100,Math.round(who/(d.wholesaleTarget||1)*100));
-  const typeBtns=INT_TYPES.map(t=>`<button class="chip${logType===t?' on':''}" data-itype="${t}" style="font-size:11px;padding:4px 9px;">${t}</button>`).join('');
+  const typeSelect=`<select class="inp" id="log-type" style="width:100%;">${INT_TYPES.map(t=>`<option value="${esc(t)}" ${logType===t?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
+  const fuTypeSelect=`<select class="inp" id="fu-type" style="flex:1;">${INT_TYPES.map(t=>`<option value="${esc(t)}" ${t==='📞 Call'?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
   const spouseOpts=[...(!d.pDeceased?['Primary']:[]),...(d.sName&&!d.sDeceased?['Secondary']:[]),...(!d.pDeceased&&d.sName&&!d.sDeceased?['Both']:[])].map(s=>`<option value="${s}" ${logSpouse===s?'selected':''}>${s==='Primary'?esc(d.pName||'Primary'):s==='Secondary'?esc(d.sName||'Secondary'):'Both'}</option>`).join('');
   const tierBtns=`<button class="chip${!d.tier?' on':''}" data-tier="">No tier</button>`+TIERS.map(t=>`<button class="chip${d.tier===t?' on':''}" data-tier="${t}">${TIER_CFG[t].label}</button>`).join('');
   const payPlanBtns=PAY_PLANS.map(p=>`<button class="pay-chip${(d.pledgePlan||'')=== p?' on':''}" data-payplan="${p}">${p}</button>`).join('');
-  const openTasks=(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t));const doneTasks=(d.tasks||[]).filter(t=>t.done);
-  const taskMeta=t=>{
-    if(t.done){const who=userName(t.doneBy||t.by);const when=t.doneAt?new Date(t.doneAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';return `<div class="tby">✓ ${who?esc(who):'Completed'}${when?' · '+when:''}</div>`;}
-    const who=t.by&&t.by!==(currentUser&&currentUser.id)?userName(t.by):'';return who?`<div class="tby">added by ${esc(who)}</div>`:'';
-  };
-  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk${t.done?' done':''}" data-td="${t.id}">${t.done?'✓':''}</div><div class="ttxt">${esc(t.note||'')}${t.due?`<div class="tdue ${t.done?'upcoming':taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:(t.done?'':'<div class="tdue upcoming">No due date</div>')}${taskMeta(t)}</div><div class="tacts">${t.done?'':`<input type="date" class="tdate-inp" data-tdate2="${t.id}" value="${t.due||''}" title="Change due date"/>`}<button class="tdel" data-tdel="${t.id}" title="Delete task">×</button></div></div>`).join('');
+  const openTasks=(d.tasks||[]).filter(t=>!t.done&&pendingVisible(t));
+  const taskMeta=t=>{const who=t.by&&t.by!==(currentUser&&currentUser.id)?userName(t.by):'';return who?`<div class="tby">added by ${esc(who)}</div>`:'';};
+  const taskHTML=ts=>ts.map(t=>`<div class="titem"><div class="tchk" data-td="${t.id}" title="Mark done"></div><div class="ttxt"><span class="ttype">${esc(t.type||'📞 Call')}</span> ${esc(t.note||'')}${t.due?`<div class="tdue ${taskDueStatus(t.due)}">${taskDueLabel(t.due)}</div>`:'<div class="tdue upcoming">No due date</div>'}${taskMeta(t)}</div><div class="tacts"><input type="date" class="tdate-inp" data-tdate2="${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-tdel="${t.id}" title="Delete task">×</button></div></div>`).join('');
   const histHTML=(d.interactions||[]).length===0?'<div style="font-size:13px;color:var(--text-3);">No interactions yet.</div>'
     :[...(d.interactions||[])].reverse().map(i=>`<div class="hint"><div class="hhdr"><div><span class="htype">${esc(i.type)}</span>${i.spouse?`<span class="hspouse">${esc(i.spouse)}</span>`:''}<span class="hdate">${fmtDate(i.date)}</span></div><div class="hactions"><button class="hedit" data-ei="${i.id}" title="Edit">✏️</button><button class="hdel" data-di="${i.id}" title="Delete">×</button></div></div><div class="hnote">${esc(i.note||'')}</div></div>`).join('');
   const profileFields=[['Latest Donation',fmt(d.latestDonation)],['Latest Date',d.latestDate],['Largest Donation',fmt(d.largestDonation)],...Object.entries(d.years||{}).filter(([,v])=>v).sort((a,b)=>String(b[0]).localeCompare(String(a[0]))).map(([y,v])=>[y,fmt(v)]),...Object.entries(d.custom||{})].filter(([,v])=>v&&v!=='—');
@@ -1268,8 +1299,8 @@ function renderDetail(id){
       <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--brand);">${isPost?'Personal touches':'📞 Retail'}: ${ret} of ${d.retailTarget||1}</span><span>${rPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${rPct}%;background:var(--brand);"></div></div></div>
       <div class="tp-bar"><div class="tp-lbl"><span style="color:var(--amber);">${isPost?'Reports/newsletters':'📄 Wholesale'}: ${who} of ${d.wholesaleTarget||1}</span><span>${wPct}%</span></div><div class="tp-bg"><div class="tp-fill" style="width:${wPct}%;background:var(--amber);"></div></div></div>`)}
     ${dcard(did,'log','Log Interaction',`
-      <div class="chips" style="margin-bottom:9px;">${typeBtns}</div>
       <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <div style="flex:1;"><label class="field-lbl">Type</label>${typeSelect}</div>
         <div style="flex:1;"><label class="field-lbl">Spoke with</label><select class="inp" id="spouse-sel" style="width:100%;">${spouseOpts}</select></div>
         <div style="flex:1;"><label class="field-lbl">Date</label><input class="inp" id="log-date" type="date" value="${today()}"/></div>
       </div>
@@ -1279,6 +1310,7 @@ function renderDetail(id){
       </div>
       <div class="subhd" style="margin-bottom:6px;">Follow-up Task (optional)</div>
       <div style="display:flex;gap:8px;margin-bottom:9px;align-items:center;">
+        ${fuTypeSelect}
         <input class="inp" id="fu-note" placeholder="What's the next move?" style="flex:2;"/>
         <button class="micbtn" id="mic-fu-note">🎤</button>
         <input class="inp" id="fu-date" type="date" style="flex:1;"/>
@@ -1287,7 +1319,7 @@ function renderDetail(id){
         <button class="savebtn alt" id="add-task-btn" style="flex:1;">+ Add task only</button>
         <button class="savebtn" id="save-log-btn" style="flex:2;">Save Interaction</button>
       </div>`)}
-    ${openTasks.length>0||doneTasks.length>0?dcard(did,'tasks','Follow-up Tasks',`${taskHTML(openTasks)}${doneTasks.length>0?`<div class="subhd" style="margin:9px 0 3px;">Completed</div>${taskHTML(doneTasks)}`:''}`):''}
+    ${openTasks.length>0?dcard(did,'tasks','Follow-up Tasks',taskHTML(openTasks)):''}
     ${dcard(did,'history',`Interaction History (${(d.interactions||[]).length})`,histHTML)}
     ${canMng?dcard(did,'remove','Remove Contact',`
       <button class="savebtn danger" id="del-contact-btn">🗑 Archive or delete this contact</button>
@@ -1394,60 +1426,53 @@ function renderPlan(){
   </div>`;
 }
 
-// ── TASKS: complete + follow-up prompt ─────────────────────────────
-// Mark a task done (stamping who/when), then offer to set the next follow-up.
-function completeTaskWithFollowup(donorId,taskId){
+// ── TASKS: check off → log what happened ───────────────────────────
+// Checking off a task records what actually happened as an interaction (you can
+// change the type — "was a call, ended up texting" — and add a comment), then
+// removes the task from the follow-up list. The record now lives in history.
+function showTaskLog(donorId,taskId){
   const d=getDonor(donorId);if(!d)return;
-  const now=Date.now();
-  updateDonor(donorId,{tasks:(d.tasks||[]).map(t=>String(t.id)===String(taskId)?{...t,done:true,doneAt:now,doneBy:currentUser.id}:t)});
-  render();
-  showFollowupModal(donorId);
-}
-function uncompleteTask(donorId,taskId){
-  const d=getDonor(donorId);if(!d)return;
-  updateDonor(donorId,{tasks:(d.tasks||[]).map(t=>String(t.id)===String(taskId)?{...t,done:false,doneAt:undefined,doneBy:undefined}:t)});
-  render();
-}
-function showFollowupModal(donorId){
-  const d=getDonor(donorId);if(!d)return;
+  const t=(d.tasks||[]).find(x=>String(x.id)===String(taskId));if(!t)return;
+  const cur=t.type||'📞 Call';
+  const typeOpts=INT_TYPES.map(x=>`<option value="${esc(x)}" ${cur===x?'selected':''}>${esc(x)}</option>`).join('');
   const m=document.createElement('div');m.className='overlay';
-  m.innerHTML=`<div class="sheet"><div class="mtitle">Task completed ✓</div>
-    <div class="msub">Want to set a follow-up task for <b>${esc(d.name)}</b>?</div>
-    <div class="mfield"><label class="mlbl">Follow-up</label><input class="inp" id="fum-note" placeholder="What's the next move?" style="width:100%;"/></div>
-    <div class="mfield"><label class="mlbl">Due date (optional)</label><input class="inp" id="fum-date" type="date" style="width:100%;"/></div>
-    <div class="mrow"><button class="mbtn s" id="fum-skip">No thanks</button><button class="mbtn p" id="fum-add">Add follow-up</button></div>
+  m.innerHTML=`<div class="sheet"><div class="mtitle">Log this task ✓</div>
+    <div class="msub"><b>${esc(d.name)}</b> — ${esc(t.note||'')}</div>
+    <div class="mfield"><label class="mlbl">What happened?</label><select class="inp" id="tl-type" style="width:100%;">${typeOpts}</select></div>
+    <div class="mfield"><label class="mlbl">Comment</label><textarea class="inp" id="tl-note" placeholder="How did it go? (optional)" style="width:100%;min-height:70px;resize:vertical;line-height:1.45;font-family:inherit;"></textarea></div>
+    <div class="mfield"><label class="mlbl">Set a follow-up (optional)</label><input class="inp" id="tl-fu" placeholder="Next move?" style="width:100%;margin-bottom:6px;"/><input class="inp" id="tl-fudate" type="date" style="width:100%;"/></div>
+    <div class="mrow"><button class="mbtn s" id="tl-cancel">Cancel</button><button class="mbtn p" id="tl-save">Log it</button></div>
   </div>`;
   document.body.appendChild(m);
   const close=()=>m.remove();
   m.addEventListener('click',e=>{if(e.target===m)close();});
-  document.getElementById('fum-skip').onclick=close;
-  document.getElementById('fum-note').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('fum-add').click();});
-  document.getElementById('fum-add').onclick=()=>{
-    const el=document.getElementById('fum-note');const note=el.value.trim();const due=document.getElementById('fum-date').value;
-    if(!note){el.focus();el.style.borderColor='var(--red)';return;}
+  document.getElementById('tl-cancel').onclick=close;
+  document.getElementById('tl-save').onclick=()=>{
     const dd=getDonor(donorId);if(!dd){close();return;}
-    updateDonor(donorId,{tasks:[...(dd.tasks||[]),{id:Date.now(),note,due:due||'',done:false,by:currentUser.id}]});
-    close();render();
+    const type=document.getElementById('tl-type').value;
+    const note=document.getElementById('tl-note').value.trim()||t.note||'';
+    const fu=document.getElementById('tl-fu').value.trim();
+    const fudate=document.getElementById('tl-fudate').value;
+    const interactions=[...(dd.interactions||[]),{id:Date.now(),type,date:today(),note,by:currentUser.id}];
+    let tasks=(dd.tasks||[]).filter(x=>String(x.id)!==String(taskId));
+    if(fu)tasks=[...tasks,{id:Date.now()+1,note:fu,due:fudate||'',type:'📞 Call',done:false,by:currentUser.id}];
+    updateDonor(donorId,{interactions,tasks});
+    close();
+    fireConfetti();
+    const goal=settings.dailyGoal||10;if(countedToday()>=goal)updateStreak(true);
+    render();
   };
-  setTimeout(()=>document.getElementById('fum-note')?.focus(),50);
+  setTimeout(()=>document.getElementById('tl-note')?.focus(),50);
 }
 
 // ── RENDER: TASKS ──────────────────────────────────────────────────
+// Only open follow-ups live here. Checking one off logs it to the contact's
+// Interaction History (see showTaskLog), so there's no "Completed" list.
 function renderTasks(){
-  const isFollow=taskTab!=='completed';
-  const tabBar=`<div class="tab-toggle" style="max-width:1040px;margin:0 auto 4px;"><button class="tab-btn ${isFollow?'on':'off'}" data-ttab="followups">📌 Follow-ups</button><button class="tab-btn ${!isFollow?'on':'off'}" data-ttab="completed">✓ Completed</button></div>`;
-  if(!isFollow){
-    const done=completedTasks();
-    const crow=t=>`<div class="titem" data-search="${esc(((t.donorName||'')+' '+(t.note||'')).toLowerCase())}"><div class="tchk done" data-untd="${t.donorId}|${t.id}" title="Mark as not done">✓</div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tby">✓ ${esc(userName(t.doneBy||t.by)||'Completed')}${t.doneAt?' · '+new Date(t.doneAt).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}):''}</div></div></div>`;
-    return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${done.length} completed</div></div></div></div>
-    ${tabBar}
-    <div class="tsec">${done.length?`<input class="sinput" id="task-search" placeholder="🔍 Search completed tasks by name or note…" autocomplete="off" style="margin-bottom:12px;"/><div class="tcard" id="task-list">${done.map(crow).join('')}</div><div class="empty" id="task-search-empty" style="display:none;"><div class="empty-icon">🔍</div><div class="empty-txt">No completed tasks match.</div></div>`:`<div class="empty"><div class="empty-icon">🗂</div><div class="empty-txt">No completed tasks yet.</div></div>`}</div>`;
-  }
   const od=overdueTasks(),td=todayTasks(),up=upcomingTasks().slice(0,25);
-  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}" title="Mark done"></div><div class="ttxt" data-goto="${t.donorId}"><span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${t.due?taskDueLabel(t.due):'No due date'}</div></div><div class="tacts"><input type="date" class="tdate-inp" data-tdate="${t.donorId}|${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-gdel="${t.donorId}|${t.id}" title="Delete task">×</button></div></div>`;
+  const row=t=>`<div class="titem"><div class="tchk" data-gtd="${t.donorId}|${t.id}" title="Mark done"></div><div class="ttxt" data-goto="${t.donorId}"><span class="ttype">${esc(t.type||'📞 Call')}</span> <span style="font-weight:700;color:var(--text);">${esc(t.donorName)}</span> — ${esc(t.note||'')}<div class="tdue ${taskDueStatus(t.due)}">${t.due?taskDueLabel(t.due):'No due date'}</div></div><div class="tacts"><input type="date" class="tdate-inp" data-tdate="${t.donorId}|${t.id}" value="${t.due||''}" title="Change due date"/><button class="tdel" data-gdel="${t.donorId}|${t.id}" title="Delete task">×</button></div></div>`;
   const sec=(title,arr)=>arr.length?`<h3>${title}</h3><div class="tcard">${arr.map(row).join('')}</div>`:'';
   return`<div class="hdr"><div class="hdr-top"><div><div class="hdr-title">Tasks</div><div class="hdr-sub">${od.length} overdue · ${td.length} today</div></div></div></div>
-  ${tabBar}
   <div class="tsec">${sec(`🔴 Overdue (${od.length})`,od)}${sec(`🟡 Today (${td.length})`,td)}${sec('📅 Upcoming',up)}${od.length+td.length+up.length===0?`<div class="empty"><div class="empty-icon">✅</div><div class="empty-txt">No follow-up tasks!</div></div>`:''}</div>`;
 }
 
@@ -1818,6 +1843,7 @@ function attachEvents(){
   // Dashboard
   document.getElementById('daily-goal-inp')?.addEventListener('change',e=>{settings.dailyGoal=parseInt(e.target.value)||10;markSettings();render();});
   document.getElementById('dash-sort-sel')?.addEventListener('change',e=>{settings.dashSort=e.target.value;markSettings();render();});
+  document.getElementById('dash-count-sel')?.addEventListener('change',e=>{settings.countMode=e.target.value;markSettings();render();});
 
   // Plan tab — live updates without re-render so focus/scroll are preserved
   document.getElementById('plan-goal-inp')?.addEventListener('input',e=>{const v=parseFloat(e.target.value)||0;settings.campaignGoals=settings.campaignGoals||{};settings.campaignGoals[activeCampaignId]=v;markSettings();updatePlanBars();});
@@ -1831,23 +1857,14 @@ function attachEvents(){
   document.getElementById('plan-search')?.addEventListener('input',e=>{const q=e.target.value.toLowerCase();document.querySelectorAll('.plan-table tbody tr').forEach(tr=>{const nm=(tr.querySelector('.plan-name')?.textContent||'').toLowerCase();tr.style.display=nm.includes(q)?'':'none';});});
   document.getElementById('plan-sort')?.addEventListener('change',e=>{planSort=e.target.value;render();});
 
-  document.querySelectorAll('[data-dashcall]').forEach(b=>b.addEventListener('click',()=>{
-    const id=b.dataset.dashcall;
-    if(dashState.doneCalls.includes(id)){dashState.doneCalls=dashState.doneCalls.filter(x=>x!==id);markDash();render();return;}
-    dashState.doneCalls.push(id);markDash();
-    const calls=getDashCalls();
-    const doneCt=dashState.doneCalls.filter(x=>calls.find(d=>d.id===x)).length;
-    const remaining=Math.max(0,(settings.dailyGoal||10)-doneCt);
-    fireConfetti();showCheer(remaining);
-    if(remaining===0)updateStreak(true);
-    // Marking a call done means recording what happened — jump straight into
-    // the contact's Log Interaction screen so the rep can write it up.
-    openDetailToLog(id);
-  }));
+  // Dashboard: checking off a task logs what happened to the contact's history.
+  document.querySelectorAll('[data-tasklog]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const[did,tid]=b.dataset.tasklog.split('|');showTaskLog(did,tid);}));
+  // Suggestions have no task yet — jump into the contact's Log Interaction screen.
+  document.querySelectorAll('[data-suglog]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openDetailToLog(b.dataset.suglog);}));
 
-  document.querySelectorAll('[data-opend]').forEach(b=>b.addEventListener('click',()=>openDetail(b.dataset.opend)));
+  document.querySelectorAll('[data-opend]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();openDetail(b.dataset.opend);}));
   document.querySelectorAll('[data-cardopen]').forEach(card=>card.addEventListener('click',e=>{
-    if(e.target.closest('[data-dashcall],[data-opend],a,.fu-prompt'))return;
+    if(e.target.closest('[data-tasklog],[data-suglog],[data-opend],a,.fu-prompt'))return;
     openDetail(card.dataset.cardopen);
   }));
 
@@ -1913,11 +1930,11 @@ function attachEvents(){
   // Setting an expected payment date creates/updates a single follow-up task for it.
   document.getElementById('pledge-plan-date')?.addEventListener('change',e=>{const date=e.target.value;const d=getDonor(activeDetailId);if(!d)return;
     let tasks=(d.tasks||[]).map(t=>t.pledgeFollowup?{...t,due:date,done:false}:t);
-    if(date&&!tasks.some(t=>t.pledgeFollowup))tasks=[...tasks,{id:Date.now(),note:'Follow up: pledge payment expected',due:date,done:false,pledgeFollowup:true,by:currentUser.id}];
+    if(date&&!tasks.some(t=>t.pledgeFollowup))tasks=[...tasks,{id:Date.now(),note:'Follow up: pledge payment expected',due:date,type:'📞 Call',done:false,pledgeFollowup:true,by:currentUser.id}];
     updateDonor(activeDetailId,{pledgePlanNote:date,tasks});render();});
-  document.getElementById('add-task-btn')?.addEventListener('click',()=>{const el=document.getElementById('fu-note');const fuNote=el?.value.trim();const fuDate=document.getElementById('fu-date')?.value;const d=getDonor(activeDetailId);if(!d)return;
+  document.getElementById('add-task-btn')?.addEventListener('click',()=>{const el=document.getElementById('fu-note');const fuNote=el?.value.trim();const fuDate=document.getElementById('fu-date')?.value;const fuType=document.getElementById('fu-type')?.value||'📞 Call';const d=getDonor(activeDetailId);if(!d)return;
     if(!fuNote){if(el){el.focus();el.style.borderColor='var(--red)';el.placeholder='Enter a task before adding…';}return;}
-    updateDonor(activeDetailId,{tasks:[...(d.tasks||[]),{id:Date.now(),note:fuNote,due:fuDate||'',done:false,by:currentUser.id}]});render();});
+    updateDonor(activeDetailId,{tasks:[...(d.tasks||[]),{id:Date.now(),note:fuNote,due:fuDate||'',type:fuType,done:false,by:currentUser.id}]});render();});
   document.getElementById('log-pay-btn')?.addEventListener('click',()=>{
     const amt=parseFloat(document.getElementById('pay-amount')?.value)||0;const date=document.getElementById('pay-date')?.value||today();if(!amt)return;
     const d=getDonor(activeDetailId);if(!d)return;const payments=[...(d.payments||[]),{id:Date.now(),amount:amt,date}];updateDonor(activeDetailId,{payments,pledgePaid:payments.reduce((s,p)=>s+p.amount,0)});render();});
@@ -1927,34 +1944,33 @@ function attachEvents(){
   document.querySelectorAll('[data-arc]').forEach(dot=>dot.addEventListener('click',()=>{const d=getDonor(activeDetailId);if(!d)return;const i=parseInt(dot.dataset.arc);if(d.postArcStage!==undefined)updateDonor(activeDetailId,{postArcStage:i});else updateDonor(activeDetailId,{preArcStage:i});render();}));
   document.getElementById('to-post-btn')?.addEventListener('click',()=>{updateDonor(activeDetailId,{postArcStage:0});render();});
   document.getElementById('to-pre-btn')?.addEventListener('click',()=>{updateDonor(activeDetailId,{postArcStage:undefined});render();});
-  document.querySelectorAll('[data-itype]').forEach(b=>b.addEventListener('click',()=>{logType=b.dataset.itype;document.querySelectorAll('[data-itype]').forEach(x=>x.classList.toggle('on',x.dataset.itype===logType));}));
+  document.getElementById('log-type')?.addEventListener('change',e=>{logType=e.target.value;});
   document.getElementById('spouse-sel')?.addEventListener('change',e=>{logSpouse=e.target.value;});
   document.getElementById('mic-log-note')?.addEventListener('click',()=>{if(micActive&&micTarget==='log-note')stopMic();else startMic('log-note');});
   document.getElementById('mic-fu-note')?.addEventListener('click',()=>{if(micActive&&micTarget==='fu-note')stopMic();else startMic('fu-note');});
   document.getElementById('save-log-btn')?.addEventListener('click',()=>{
+    const type=document.getElementById('log-type')?.value||logType;
     const note=document.getElementById('log-note')?.value.trim();const date=document.getElementById('log-date')?.value;const spouse=document.getElementById('spouse-sel')?.value;
-    const fuNote=document.getElementById('fu-note')?.value.trim();const fuDate=document.getElementById('fu-date')?.value;
+    const fuNote=document.getElementById('fu-note')?.value.trim();const fuDate=document.getElementById('fu-date')?.value;const fuType=document.getElementById('fu-type')?.value||'📞 Call';
     const ta=document.getElementById('log-note');
     if(!note){if(ta){ta.focus();ta.style.borderColor='var(--red)';ta.placeholder='Add a note before saving…';}return;}
     if(ta)ta.style.borderColor='';
     const d=getDonor(activeDetailId);if(!d)return;
     const spouseName=spouse==='Primary'?(d.pName||'Primary'):spouse==='Secondary'?(d.sName||'Secondary'):'Both';
-    const interactions=[...(d.interactions||[]),{id:Date.now(),type:logType,date,note,spouse:spouseName}];
-    const tasks=[...(d.tasks||[])];if(fuNote)tasks.push({id:Date.now()+1,note:fuNote,due:fuDate||'',done:false,by:currentUser.id});
+    const interactions=[...(d.interactions||[]),{id:Date.now(),type,date,note,spouse:spouseName,by:currentUser.id}];
+    const tasks=[...(d.tasks||[])];if(fuNote)tasks.push({id:Date.now()+1,note:fuNote,due:fuDate||'',type:fuType,done:false,by:currentUser.id});
     updateDonor(activeDetailId,{interactions,tasks});
+    const goal=settings.dailyGoal||10;if(countedToday()>=goal)updateStreak(true);
     render();
   });
-  document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const t=(d.tasks||[]).find(x=>x.id===parseInt(b.dataset.td));if(!t)return;if(t.done)uncompleteTask(activeDetailId,t.id);else completeTaskWithFollowup(activeDetailId,t.id);}));
+  document.querySelectorAll('[data-td]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showTaskLog(activeDetailId,parseInt(b.dataset.td));}));
   document.querySelectorAll('[data-tdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{tasks:(d.tasks||[]).filter(t=>t.id!==parseInt(b.dataset.tdel))});render();}));
   document.querySelectorAll('[data-tdate2]').forEach(inp=>inp.addEventListener('change',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;const tid=parseInt(inp.dataset.tdate2);updateDonor(activeDetailId,{tasks:(d.tasks||[]).map(t=>t.id===tid?{...t,due:e.target.value}:t)});render();}));
   document.querySelectorAll('[data-di]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const d=getDonor(activeDetailId);if(!d)return;updateDonor(activeDetailId,{interactions:(d.interactions||[]).filter(i=>i.id!==parseInt(b.dataset.di))});render();}));
   document.querySelectorAll('[data-ei]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();showEditInteraction(activeDetailId,parseInt(b.dataset.ei));}));
-  document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');completeTaskWithFollowup(did,tid);}));
-  document.querySelectorAll('[data-untd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.untd.split('|');uncompleteTask(did,tid);}));
+  document.querySelectorAll('[data-gtd]').forEach(b=>b.addEventListener('click',()=>{const[did,tid]=b.dataset.gtd.split('|');showTaskLog(did,tid);}));
   document.querySelectorAll('[data-gdel]').forEach(b=>b.addEventListener('click',e=>{e.stopPropagation();const[did,tid]=b.dataset.gdel.split('|');const d=getDonor(did);if(!d)return;if(!confirm('Delete this task?'))return;updateDonor(did,{tasks:(d.tasks||[]).filter(t=>String(t.id)!==tid)});render();}));
   document.querySelectorAll('[data-tdate]').forEach(inp=>inp.addEventListener('change',e=>{e.stopPropagation();const[did,tid]=inp.dataset.tdate.split('|');const d=getDonor(did);if(!d)return;updateDonor(did,{tasks:(d.tasks||[]).map(t=>String(t.id)===tid?{...t,due:e.target.value}:t)});render();}));
-  document.querySelectorAll('[data-ttab]').forEach(b=>b.addEventListener('click',()=>{taskTab=b.dataset.ttab;render();}));
-  document.getElementById('task-search')?.addEventListener('input',e=>{const q=e.target.value.trim().toLowerCase();let shown=0;document.querySelectorAll('#task-list .titem').forEach(it=>{const hit=(it.dataset.search||'').includes(q);it.style.display=hit?'':'none';if(hit)shown++;});const empty=document.getElementById('task-search-empty');const list=document.getElementById('task-list');if(empty)empty.style.display=shown===0?'':'none';if(list)list.style.display=shown===0?'none':'';});
   document.querySelectorAll('[data-goto]').forEach(el=>el.addEventListener('click',()=>openDetail(el.dataset.goto)));
 
   // Settings
@@ -2046,7 +2062,7 @@ function showBulkModal(){
   document.body.appendChild(m);
   m.addEventListener('click',e=>{if(e.target===m)m.remove();});
   document.getElementById('bwcancel').onclick=()=>m.remove();
-  document.getElementById('bwsave').onclick=()=>{const type=document.getElementById('bwt').value,date=document.getElementById('bwd').value,note=document.getElementById('bwn').value;sel.forEach(id=>{const d=getDonor(id);if(d)updateDonor(id,{interactions:[...(d.interactions||[]),{id:Date.now()+Math.random(),type,date,note}]});});m.remove();bulkMode=false;bulkSel.clear();render();};
+  document.getElementById('bwsave').onclick=()=>{const type=document.getElementById('bwt').value,date=document.getElementById('bwd').value,note=document.getElementById('bwn').value;sel.forEach(id=>{const d=getDonor(id);if(d)updateDonor(id,{interactions:[...(d.interactions||[]),{id:Date.now()+Math.random(),type,date,note,by:currentUser.id}]});});m.remove();bulkMode=false;bulkSel.clear();render();};
 }
 
 function showBulkAssignModal(){
